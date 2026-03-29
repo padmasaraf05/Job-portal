@@ -40,7 +40,7 @@ import { ProtectedRoute } from "@/components/common/ProtectedRoute";
 export const AppRoutes = () => {
   return (
     <Routes>
-      {/* General Pages */}
+      {/* General */}
       <Route path="/" element={<Landing />} />
       <Route path="/about" element={<About />} />
       <Route path="/contact" element={<Contact />} />
@@ -65,8 +65,6 @@ export const AppRoutes = () => {
         <Route path="apply/:id"        element={<ApplyJob />} />
         <Route path="applications"     element={<ProtectedRoute><JobseekerApplications /></ProtectedRoute>} />
         <Route path="profile"          element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-
-        {/* ── Previously missing routes ── */}
         <Route path="saved-jobs"       element={<ProtectedRoute><SavedJobs /></ProtectedRoute>} />
         <Route path="skill-assessment" element={<ProtectedRoute><SkillAssessment /></ProtectedRoute>} />
         <Route path="interview-prep"   element={<ProtectedRoute><InterviewPrep /></ProtectedRoute>} />
@@ -74,26 +72,24 @@ export const AppRoutes = () => {
         <Route path="career-roadmap"   element={<ProtectedRoute><CareerRoadmap /></ProtectedRoute>} />
         <Route path="learning-path"    element={<ProtectedRoute><LearningPath /></ProtectedRoute>} />
       </Route>
-
-      {/* Top-level shortcuts */}
       <Route path="/job-search" element={<Navigate to="/jobseeker/jobs" replace />} />
       <Route path="/profile"    element={<Navigate to="/jobseeker/profile" replace />} />
 
       {/* Employer */}
       <Route path="/employer">
-        <Route path="dashboard"   element={<ProtectedRoute><EmployerDashboard /></ProtectedRoute>} />
-        <Route path="manage-jobs" element={<ProtectedRoute><ManageJobs /></ProtectedRoute>} />
-        <Route path="post-job"    element={<ProtectedRoute><PostJob /></ProtectedRoute>} />
-        <Route path="applications"element={<ProtectedRoute><EmployerApplications /></ProtectedRoute>} />
+        <Route path="dashboard"    element={<ProtectedRoute><EmployerDashboard /></ProtectedRoute>} />
+        <Route path="manage-jobs"  element={<ProtectedRoute><ManageJobs /></ProtectedRoute>} />
+        <Route path="post-job"     element={<ProtectedRoute><PostJob /></ProtectedRoute>} />
+        <Route path="applications" element={<ProtectedRoute><EmployerApplications /></ProtectedRoute>} />
         <Route path="candidate/:id" element={<ProtectedRoute><CandidateProfile /></ProtectedRoute>} />
       </Route>
 
-      {/* Admin */}
+      {/* Admin — protected with adminOnly flag */}
       <Route path="/admin">
-        <Route path="dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
-        <Route path="jobs"      element={<ProtectedRoute><AdminJobs /></ProtectedRoute>} />
-        <Route path="users"     element={<ProtectedRoute><AdminUsers /></ProtectedRoute>} />
-        <Route path="reports"   element={<ProtectedRoute><AdminReports /></ProtectedRoute>} />
+        <Route path="dashboard" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
+        <Route path="jobs"      element={<ProtectedRoute adminOnly><AdminJobs /></ProtectedRoute>} />
+        <Route path="users"     element={<ProtectedRoute adminOnly><AdminUsers /></ProtectedRoute>} />
+        <Route path="reports"   element={<ProtectedRoute adminOnly><AdminReports /></ProtectedRoute>} />
       </Route>
 
       {/* 404 */}
