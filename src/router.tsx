@@ -15,6 +15,12 @@ import ApplyJob from "@/pages/jobseeker/ApplyJob";
 import JobseekerDashboard from "@/pages/jobseeker/dashboard";
 import JobseekerApplications from "@/pages/jobseeker/Applications";
 import Profile from "@/pages/jobseeker/Profile";
+import SavedJobs from "@/pages/jobseeker/SavedJobs";
+import SkillAssessment from "@/pages/jobseeker/SkillAssessment";
+import InterviewPrep from "@/pages/jobseeker/InterviewPrep";
+import ResumeAnalysis from "@/pages/jobseeker/ResumeAnalysis";
+import CareerRoadmap from "@/pages/jobseeker/CareerRoadmap";
+import LearningPath from "@/pages/jobseeker/LearningPath";
 
 // Employer
 import EmployerDashboard from "@/pages/employer/dashboard";
@@ -40,49 +46,55 @@ export const AppRoutes = () => {
       <Route path="/contact" element={<Contact />} />
       <Route path="/pricing" element={<Pricing />} />
 
-      {/* Auth grouping */}
+      {/* Auth */}
       <Route path="/auth">
         <Route index element={<Navigate to="login" replace />} />
         <Route path="login" element={<Login />} />
         <Route path="register" element={<Register />} />
         <Route path="forgot-password" element={<ForgotPassword />} />
       </Route>
-      {/* Top-level legacy/shortcut auth routes (redirect to canonical) */}
       <Route path="/login" element={<Navigate to="/auth/login" replace />} />
       <Route path="/register" element={<Navigate to="/auth/register" replace />} />
       <Route path="/forgot-password" element={<Navigate to="/auth/forgot-password" replace />} />
 
-      {/* Jobseeker grouping */}
+      {/* Jobseeker */}
       <Route path="/jobseeker">
-        <Route path="dashboard" element={<ProtectedRoute><JobseekerDashboard /></ProtectedRoute>} />
-        <Route path="jobs" element={<JobSearch />} />
-        <Route path="job/:id" element={<JobDetails />} />
-        <Route path="apply/:id" element={<ApplyJob />} />
-        <Route path="applications" element={<ProtectedRoute><JobseekerApplications /></ProtectedRoute>} />
-        <Route path="profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+        <Route path="dashboard"        element={<ProtectedRoute><JobseekerDashboard /></ProtectedRoute>} />
+        <Route path="jobs"             element={<JobSearch />} />
+        <Route path="job/:id"          element={<JobDetails />} />
+        <Route path="apply/:id"        element={<ApplyJob />} />
+        <Route path="applications"     element={<ProtectedRoute><JobseekerApplications /></ProtectedRoute>} />
+        <Route path="profile"          element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+
+        {/* ── Previously missing routes ── */}
+        <Route path="saved-jobs"       element={<ProtectedRoute><SavedJobs /></ProtectedRoute>} />
+        <Route path="skill-assessment" element={<ProtectedRoute><SkillAssessment /></ProtectedRoute>} />
+        <Route path="interview-prep"   element={<ProtectedRoute><InterviewPrep /></ProtectedRoute>} />
+        <Route path="resume-analysis"  element={<ProtectedRoute><ResumeAnalysis /></ProtectedRoute>} />
+        <Route path="career-roadmap"   element={<ProtectedRoute><CareerRoadmap /></ProtectedRoute>} />
+        <Route path="learning-path"    element={<ProtectedRoute><LearningPath /></ProtectedRoute>} />
       </Route>
+
       {/* Top-level shortcuts */}
       <Route path="/job-search" element={<Navigate to="/jobseeker/jobs" replace />} />
-      <Route path="/profile" element={<Navigate to="/jobseeker/profile" replace />} />
+      <Route path="/profile"    element={<Navigate to="/jobseeker/profile" replace />} />
 
-      {/* Employer grouping */}
+      {/* Employer */}
       <Route path="/employer">
-        <Route path="dashboard" element={<ProtectedRoute><EmployerDashboard /></ProtectedRoute>} />
+        <Route path="dashboard"   element={<ProtectedRoute><EmployerDashboard /></ProtectedRoute>} />
         <Route path="manage-jobs" element={<ProtectedRoute><ManageJobs /></ProtectedRoute>} />
-        <Route path="post-job" element={<ProtectedRoute><PostJob /></ProtectedRoute>} />
-        <Route path="applications" element={<ProtectedRoute><EmployerApplications /></ProtectedRoute>} />
+        <Route path="post-job"    element={<ProtectedRoute><PostJob /></ProtectedRoute>} />
+        <Route path="applications"element={<ProtectedRoute><EmployerApplications /></ProtectedRoute>} />
         <Route path="candidate/:id" element={<ProtectedRoute><CandidateProfile /></ProtectedRoute>} />
       </Route>
 
-      {/* Admin grouping */}
+      {/* Admin */}
       <Route path="/admin">
         <Route path="dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
-        <Route path="jobs" element={<ProtectedRoute><AdminJobs /></ProtectedRoute>} />
-        <Route path="users" element={<ProtectedRoute><AdminUsers /></ProtectedRoute>} />
-        <Route path="reports" element={<ProtectedRoute><AdminReports /></ProtectedRoute>} />
+        <Route path="jobs"      element={<ProtectedRoute><AdminJobs /></ProtectedRoute>} />
+        <Route path="users"     element={<ProtectedRoute><AdminUsers /></ProtectedRoute>} />
+        <Route path="reports"   element={<ProtectedRoute><AdminReports /></ProtectedRoute>} />
       </Route>
-      {/* Top-level shortcut for admin dashboard */}
-      <Route path="/admin/dashboard" element={<Navigate to="/admin/dashboard" replace />} />
 
       {/* 404 */}
       <Route path="*" element={<NotFound />} />
