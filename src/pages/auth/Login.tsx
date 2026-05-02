@@ -3,94 +3,82 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Briefcase, Mail, Lock, Eye, EyeOff, ArrowRight, User, Building2 } from "lucide-react";
+import {
+  Briefcase, Mail, Lock, Eye, EyeOff, ArrowRight,
+  User, Building2,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { useNavigate } from "react-router-dom";
 
-
 type Role = "jobseeker" | "employer";
 
 const Login = () => {
-  const { toast } = useToast();
-  const navigate = useNavigate();
+  const { toast }  = useToast();
+  const navigate   = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
-  const [role, setRole] = useState<Role>("jobseeker");
+  const [role, setRole]       = useState<Role>("jobseeker"); // UI only, doesn't affect redirect
   const [isLoading, setIsLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  });
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setIsLoading(true);
+  const [formData, setFormData] = useState({ email: "", password: "" });
 
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: formData.email,
-    password: formData.password,
-  });
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
 
-  if (error) {
-    toast({
-      title: "Login failed",
-      description: error.message,
-      variant: "destructive",
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: formData.email,
+      password: formData.password,
     });
+
+    if (error) {
+      toast({
+        title: "Login failed",
+        description: error.message,
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    // ── Role resolution: DB profiles table is source of truth ──
+    // user_metadata may be stale or missing role for admin accounts
+    let userRole = data.user?.user_metadata?.role as string | undefined;
+
+    if (!userRole || userRole === "jobseeker") {
+      // Always verify from DB — catches admin accounts and role changes
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", data.user.id)
+        .single();
+
+      if (profile?.role) {
+        userRole = profile.role;
+      }
+    }
+
+    if (!userRole) {
+      toast({
+        title: "Role not found",
+        description: "Your account has no role assigned. Contact support.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    toast({ title: "Login successful!" });
+
+    if (userRole === "admin") {
+      navigate("/admin/dashboard", { replace: true });
+    } else if (userRole === "employer") {
+      navigate("/employer/dashboard", { replace: true });
+    } else {
+      navigate("/jobseeker/dashboard", { replace: true });
+    }
+
     setIsLoading(false);
-    return;
-  }
-  /*const userId = data.user.id;
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", userId)
-    .single();
-
-  if (profileError || !profile) {
-    toast({
-      title: "Error",
-      description: "Unable to fetch user role",
-      variant: "destructive",
-    });
-    setIsLoading(false);
-    return;
-  }
-
-  toast({
-    title: "Login Successful!",
-    //description: "Redirecting to dashboard...",
-  });*/
-
-  const role = data.user.user_metadata?.role;
- console.log("ROLE:", role);
- if (!role) {
-    toast({
-      title: "Role missing",
-      description: "No role found for this user.",
-      variant: "destructive",
-    });
-    setIsLoading(false);
-    return;
-  }
-
-  toast({
-    title: "Login Successful!",
-   // description: "Redirecting to dashboard...",
-  });
-
-
-  if (role === "jobseeker") {
-    navigate("/jobseeker/dashboard",{ replace: true });
-  } else if (role === "employer") {
-    navigate("/employer/dashboard",{ replace: true });
-  } else if (role === "admin") {
-    navigate("/admin/dashboard",{ replace: true });
-  }
-
-  setIsLoading(false);
-};
-
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -122,7 +110,7 @@ const handleSubmit = async (e: React.FormEvent) => {
             Sign in to continue your career journey
           </p>
 
-          {/* Role Selector */}
+          {/* Role Selector — visual hint only, redirect is based on DB role */}
           <div className="mb-8">
             <p className="text-sm font-medium text-foreground mb-3">I am a:</p>
             <div className="grid grid-cols-2 gap-4">
@@ -135,16 +123,8 @@ const handleSubmit = async (e: React.FormEvent) => {
                     : "border-border hover:border-primary/50"
                 }`}
               >
-                <User
-                  className={`w-6 h-6 ${
-                    role === "jobseeker" ? "text-primary" : "text-muted-foreground"
-                  }`}
-                />
-                <span
-                  className={`text-sm font-medium ${
-                    role === "jobseeker" ? "text-primary" : "text-muted-foreground"
-                  }`}
-                >
+                <User className={`w-6 h-6 ${role === "jobseeker" ? "text-primary" : "text-muted-foreground"}`} />
+                <span className={`text-sm font-medium ${role === "jobseeker" ? "text-primary" : "text-muted-foreground"}`}>
                   Job Seeker
                 </span>
               </button>
@@ -153,24 +133,19 @@ const handleSubmit = async (e: React.FormEvent) => {
                 onClick={() => setRole("employer")}
                 className={`p-4 rounded-xl border-2 transition-all duration-200 flex flex-col items-center gap-2 ${
                   role === "employer"
-                    ? "border-secondary bg-secondary/5"
-                    : "border-border hover:border-secondary/50"
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-primary/50"
                 }`}
               >
-                <Building2
-                  className={`w-6 h-6 ${
-                    role === "employer" ? "text-secondary" : "text-muted-foreground"
-                  }`}
-                />
-                <span
-                  className={`text-sm font-medium ${
-                    role === "employer" ? "text-secondary" : "text-muted-foreground"
-                  }`}
-                >
+                <Building2 className={`w-6 h-6 ${role === "employer" ? "text-primary" : "text-muted-foreground"}`} />
+                <span className={`text-sm font-medium ${role === "employer" ? "text-primary" : "text-muted-foreground"}`}>
                   Employer
                 </span>
               </button>
             </div>
+            <p className="text-xs text-muted-foreground mt-2 text-center">
+              Admin accounts are redirected automatically
+            </p>
           </div>
 
           {/* Form */}
@@ -196,10 +171,7 @@ const handleSubmit = async (e: React.FormEvent) => {
             <div>
               <div className="flex justify-between items-center mb-2">
                 <label className="text-sm font-medium text-foreground">Password</label>
-                <Link
-                  to="/forgot-password"
-                  className="text-sm text-primary hover:underline"
-                >
+                <Link to="/forgot-password" className="text-sm text-primary hover:underline">
                   Forgot password?
                 </Link>
               </div>
@@ -232,9 +204,7 @@ const handleSubmit = async (e: React.FormEvent) => {
               disabled={isLoading}
             >
               {isLoading ? "Signing in..." : (
-                <>
-                  Sign In <ArrowRight className="w-4 h-4 ml-2" />
-                </>
+                <>Sign In <ArrowRight className="w-4 h-4 ml-2" /></>
               )}
             </Button>
           </form>
@@ -248,7 +218,7 @@ const handleSubmit = async (e: React.FormEvent) => {
         </motion.div>
       </div>
 
-      {/* Right Panel - Visual */}
+      {/* Right Panel */}
       <div className="hidden lg:flex flex-1 bg-gradient-hero items-center justify-center p-12 relative overflow-hidden">
         <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[length:20px_20px]" />
         <motion.div
@@ -260,9 +230,7 @@ const handleSubmit = async (e: React.FormEvent) => {
           <div className="w-24 h-24 rounded-3xl bg-primary-foreground/20 flex items-center justify-center mx-auto mb-8 animate-float">
             <Briefcase className="w-12 h-12" />
           </div>
-          <h2 className="font-display text-3xl font-bold mb-4">
-            Your Career Awaits
-          </h2>
+          <h2 className="font-display text-3xl font-bold mb-4">Your Career Awaits</h2>
           <p className="text-primary-foreground/80 max-w-md">
             Access AI-powered career guidance, job matching, and professional development tools all in one place.
           </p>

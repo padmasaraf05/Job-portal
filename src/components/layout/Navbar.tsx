@@ -5,15 +5,32 @@ import { Briefcase, Menu, X } from "lucide-react";
 import { useState } from "react";
 
 const navLinks = [
-  { name: "Home", path: "/" },
-  { name: "About", path: "/about" },
+  { name: "Home",    path: "/" },
+  { name: "About",   path: "/about" },
   { name: "Pricing", path: "/pricing" },
   { name: "Contact", path: "/contact" },
+];
+
+// Routes where the public Navbar must NOT appear
+const HIDE_NAV_PREFIXES = [
+  "/admin",
+  "/jobseeker",
+  "/employer",
+  "/auth",
+  "/login",
+  "/register",
+  "/forgot-password",
 ];
 
 export const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
+
+  // Hide entirely on private/dashboard routes
+  const shouldHide = HIDE_NAV_PREFIXES.some((prefix) =>
+    location.pathname.startsWith(prefix)
+  );
+  if (shouldHide) return null;
 
   return (
     <motion.nav
@@ -60,10 +77,10 @@ export const Navbar = () => {
           {/* Desktop CTA */}
           <div className="hidden lg:flex items-center gap-3">
             <Button variant="ghost" asChild>
-              <Link to="/login">Sign In</Link>
+              <Link to="/auth/login">Sign In</Link>
             </Button>
             <Button variant="default" asChild>
-              <Link to="/register">Get Started</Link>
+              <Link to="/auth/register">Get Started</Link>
             </Button>
           </div>
 
@@ -101,10 +118,10 @@ export const Navbar = () => {
               ))}
               <div className="flex flex-col gap-3 pt-4 border-t border-border">
                 <Button variant="outline" asChild>
-                  <Link to="/login">Sign In</Link>
+                  <Link to="/auth/login">Sign In</Link>
                 </Button>
                 <Button variant="default" asChild>
-                  <Link to="/register">Get Started</Link>
+                  <Link to="/auth/register">Get Started</Link>
                 </Button>
               </div>
             </div>

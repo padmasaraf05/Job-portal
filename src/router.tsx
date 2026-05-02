@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import Landing from "@/pages/general/Landing";
 import About from "@/pages/general/About";
 import Contact from "@/pages/general/Contact";
@@ -36,64 +36,97 @@ import AdminUsers from "@/pages/admin/Users";
 import AdminReports from "@/pages/admin/Reports";
 
 import { ProtectedRoute } from "@/components/common/ProtectedRoute";
+import { Navbar } from "@/components/layout/Navbar";
+import { Footer } from "@/components/layout/Footer";
+
+// ── Routes where the public Navbar + Footer should NOT appear ──
+// Any path that starts with these prefixes gets no public Navbar
+const PRIVATE_PREFIXES = [
+  "/admin",
+  "/jobseeker",
+  "/employer",
+  "/auth",
+];
+
+const PublicLayout = ({ children }: { children: React.ReactNode }) => {
+  const location = useLocation();
+  const isPrivate = PRIVATE_PREFIXES.some((prefix) =>
+    location.pathname.startsWith(prefix)
+  );
+
+  if (isPrivate) {
+    // No Navbar or Footer — these pages have their own layout
+    return <>{children}</>;
+  }
+
+  return (
+    <>
+      <Navbar />
+      <main className="pt-16 lg:pt-20">{children}</main>
+      <Footer />
+    </>
+  );
+};
 
 export const AppRoutes = () => {
   return (
-    <Routes>
-      {/* General */}
-      <Route path="/" element={<Landing />} />
-      <Route path="/about" element={<About />} />
-      <Route path="/contact" element={<Contact />} />
-      <Route path="/pricing" element={<Pricing />} />
+    <PublicLayout>
+      <Routes>
+        {/* ── General (public Navbar + Footer) ── */}
+        <Route path="/" element={<Landing />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/contact" element={<Contact />} />
+        <Route path="/pricing" element={<Pricing />} />
 
-      {/* Auth */}
-      <Route path="/auth">
-        <Route index element={<Navigate to="login" replace />} />
-        <Route path="login" element={<Login />} />
-        <Route path="register" element={<Register />} />
-        <Route path="forgot-password" element={<ForgotPassword />} />
-      </Route>
-      <Route path="/login" element={<Navigate to="/auth/login" replace />} />
-      <Route path="/register" element={<Navigate to="/auth/register" replace />} />
-      <Route path="/forgot-password" element={<Navigate to="/auth/forgot-password" replace />} />
+        {/* ── Auth (no Navbar) ── */}
+        <Route path="/auth">
+          <Route index element={<Navigate to="login" replace />} />
+          <Route path="login" element={<Login />} />
+          <Route path="register" element={<Register />} />
+          <Route path="forgot-password" element={<ForgotPassword />} />
+        </Route>
+        <Route path="/login"          element={<Navigate to="/auth/login" replace />} />
+        <Route path="/register"       element={<Navigate to="/auth/register" replace />} />
+        <Route path="/forgot-password" element={<Navigate to="/auth/forgot-password" replace />} />
 
-      {/* Jobseeker */}
-      <Route path="/jobseeker">
-        <Route path="dashboard"        element={<ProtectedRoute><JobseekerDashboard /></ProtectedRoute>} />
-        <Route path="jobs"             element={<JobSearch />} />
-        <Route path="job/:id"          element={<JobDetails />} />
-        <Route path="apply/:id"        element={<ApplyJob />} />
-        <Route path="applications"     element={<ProtectedRoute><JobseekerApplications /></ProtectedRoute>} />
-        <Route path="profile"          element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-        <Route path="saved-jobs"       element={<ProtectedRoute><SavedJobs /></ProtectedRoute>} />
-        <Route path="skill-assessment" element={<ProtectedRoute><SkillAssessment /></ProtectedRoute>} />
-        <Route path="interview-prep"   element={<ProtectedRoute><InterviewPrep /></ProtectedRoute>} />
-        <Route path="resume-analysis"  element={<ProtectedRoute><ResumeAnalysis /></ProtectedRoute>} />
-        <Route path="career-roadmap"   element={<ProtectedRoute><CareerRoadmap /></ProtectedRoute>} />
-        <Route path="learning-path"    element={<ProtectedRoute><LearningPath /></ProtectedRoute>} />
-      </Route>
-      <Route path="/job-search" element={<Navigate to="/jobseeker/jobs" replace />} />
-      <Route path="/profile"    element={<Navigate to="/jobseeker/profile" replace />} />
+        {/* ── Jobseeker (no Navbar) ── */}
+        <Route path="/jobseeker">
+          <Route path="dashboard"        element={<ProtectedRoute><JobseekerDashboard /></ProtectedRoute>} />
+          <Route path="jobs"             element={<JobSearch />} />
+          <Route path="job/:id"          element={<JobDetails />} />
+          <Route path="apply/:id"        element={<ApplyJob />} />
+          <Route path="applications"     element={<ProtectedRoute><JobseekerApplications /></ProtectedRoute>} />
+          <Route path="profile"          element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+          <Route path="saved-jobs"       element={<ProtectedRoute><SavedJobs /></ProtectedRoute>} />
+          <Route path="skill-assessment" element={<ProtectedRoute><SkillAssessment /></ProtectedRoute>} />
+          <Route path="interview-prep"   element={<ProtectedRoute><InterviewPrep /></ProtectedRoute>} />
+          <Route path="resume-analysis"  element={<ProtectedRoute><ResumeAnalysis /></ProtectedRoute>} />
+          <Route path="career-roadmap"   element={<ProtectedRoute><CareerRoadmap /></ProtectedRoute>} />
+          <Route path="learning-path"    element={<ProtectedRoute><LearningPath /></ProtectedRoute>} />
+        </Route>
+        <Route path="/job-search" element={<Navigate to="/jobseeker/jobs" replace />} />
+        <Route path="/profile"    element={<Navigate to="/jobseeker/profile" replace />} />
 
-      {/* Employer */}
-      <Route path="/employer">
-        <Route path="dashboard"    element={<ProtectedRoute><EmployerDashboard /></ProtectedRoute>} />
-        <Route path="manage-jobs"  element={<ProtectedRoute><ManageJobs /></ProtectedRoute>} />
-        <Route path="post-job"     element={<ProtectedRoute><PostJob /></ProtectedRoute>} />
-        <Route path="applications" element={<ProtectedRoute><EmployerApplications /></ProtectedRoute>} />
-        <Route path="candidate/:id" element={<ProtectedRoute><CandidateProfile /></ProtectedRoute>} />
-      </Route>
+        {/* ── Employer (no Navbar) ── */}
+        <Route path="/employer">
+          <Route path="dashboard"     element={<ProtectedRoute><EmployerDashboard /></ProtectedRoute>} />
+          <Route path="manage-jobs"   element={<ProtectedRoute><ManageJobs /></ProtectedRoute>} />
+          <Route path="post-job"      element={<ProtectedRoute><PostJob /></ProtectedRoute>} />
+          <Route path="applications"  element={<ProtectedRoute><EmployerApplications /></ProtectedRoute>} />
+          <Route path="candidate/:id" element={<ProtectedRoute><CandidateProfile /></ProtectedRoute>} />
+        </Route>
 
-      {/* Admin — protected with adminOnly flag */}
-      <Route path="/admin">
-        <Route path="dashboard" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
-        <Route path="jobs"      element={<ProtectedRoute adminOnly><AdminJobs /></ProtectedRoute>} />
-        <Route path="users"     element={<ProtectedRoute adminOnly><AdminUsers /></ProtectedRoute>} />
-        <Route path="reports"   element={<ProtectedRoute adminOnly><AdminReports /></ProtectedRoute>} />
-      </Route>
+        {/* ── Admin (no Navbar — AdminLayout has its own sidebar) ── */}
+        <Route path="/admin">
+          <Route path="dashboard" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
+          <Route path="jobs"      element={<ProtectedRoute adminOnly><AdminJobs /></ProtectedRoute>} />
+          <Route path="users"     element={<ProtectedRoute adminOnly><AdminUsers /></ProtectedRoute>} />
+          <Route path="reports"   element={<ProtectedRoute adminOnly><AdminReports /></ProtectedRoute>} />
+        </Route>
 
-      {/* 404 */}
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+        {/* 404 */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </PublicLayout>
   );
 };

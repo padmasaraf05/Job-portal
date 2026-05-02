@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
-  Search, Filter, Eye, CheckCircle, XCircle, Clock,
-  MapPin, Building2, Calendar, MoreHorizontal, Loader2, RefreshCw,
+  Search, Eye, CheckCircle, XCircle, Clock,
+  MapPin, Building2, Calendar, MoreHorizontal,
+  Loader2, RefreshCw,
 } from "lucide-react";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,97 +37,84 @@ const Jobs = () => {
   const fetchJobs = async () => {
     setLoading(true);
 
+    // Simple query — no join, avoids foreign key name issues
     const { data, error } = await supabase
       .from("jobs")
-      .select(`
-        id, title, company, location, type, status,
-        salary_min, salary_max, salary,
-        application_count, created_at,
-        profiles!jobs_employer_id_fkey(full_name)
-      `)
+      .select(
+        "id, title, company, location, type, status, salary_min, salary_max, salary, application_count, created_at, employer_id"
+      )
       .order("created_at", { ascending: false });
 
     if (error) {
-      toast({ title: "Failed to load jobs", variant: "destructive" });
-    } else {
-      setJobs(data || []);
-      const all = data || [];
-      setStats({
-        total:  all.length,
-        active: all.filter((j) => j.status === "active").length,
-        draft:  all.filter((j) => j.status === "draft").length,
-        closed: all.filter((j) => j.status === "closed" || j.status === "expired").length,
-      });
+      console.error("Jobs fetch error:", error);
+      toast({ title: "Failed to load jobs", description: error.message, variant: "destructive" });
+      setLoading(false);
+      return;
     }
+
+    const all = data || [];
+    setJobs(all);
+    setStats({
+      total:  all.length,
+      active: all.filter((j) => j.status === "active").length,
+      draft:  all.filter((j) => j.status === "draft").length,
+      closed: all.filter((j) => j.status === "closed" || j.status === "expired").length,
+    });
 
     setLoading(false);
   };
 
   useEffect(() => { fetchJobs(); }, []);
 
-  // ── Update job status ─────────────────────────────────────
   const updateStatus = async (jobId: string, newStatus: string, jobTitle: string) => {
     setUpdatingId(jobId);
-
-    const { error } = await supabase
-      .from("jobs")
-      .update({ status: newStatus })
-      .eq("id", jobId);
-
+    const { error } = await supabase.from("jobs").update({ status: newStatus }).eq("id", jobId);
     if (error) {
       toast({ title: "Update failed", variant: "destructive" });
     } else {
-      setJobs((prev) =>
-        prev.map((j) => j.id === jobId ? { ...j, status: newStatus } : j)
-      );
-      setStats((prev) => ({ ...prev })); // trigger re-derive
+      setJobs((prev) => prev.map((j) => j.id === jobId ? { ...j, status: newStatus } : j));
       toast({ title: `"${jobTitle}" is now ${newStatus}` });
     }
-
     setUpdatingId(null);
   };
 
-  // ── Delete ────────────────────────────────────────────────
   const deleteJob = async (jobId: string, jobTitle: string) => {
     if (!confirm(`Delete "${jobTitle}"? This cannot be undone.`)) return;
     setUpdatingId(jobId);
-
     const { error } = await supabase.from("jobs").delete().eq("id", jobId);
-
     if (error) {
       toast({ title: "Delete failed", variant: "destructive" });
     } else {
       setJobs((prev) => prev.filter((j) => j.id !== jobId));
       toast({ title: `"${jobTitle}" deleted` });
     }
-
     setUpdatingId(null);
   };
 
-  // ── Filter ─────────────────────────────────────────────────
   const filtered = jobs.filter((job) => {
     const matchesSearch =
       !searchQuery ||
       job.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       job.company?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesTab = activeTab === "all" || job.status === activeTab;
+    const matchesTab =
+      activeTab === "all" || job.status === activeTab;
     return matchesSearch && matchesTab;
   });
-
-  const statCards = [
-    { title: "Total Jobs",  value: stats.total,  icon: Building2,   color: "text-primary" },
-    { title: "Active",      value: stats.active, icon: CheckCircle, color: "text-success" },
-    { title: "Drafts",      value: stats.draft,  icon: Clock,       color: "text-warning" },
-    { title: "Closed",      value: stats.closed, icon: XCircle,     color: "text-destructive" },
-  ];
 
   const statusBadgeClass = (status: string) => {
     if (status === "active")  return "bg-success/10 text-success border-success/20";
     if (status === "draft")   return "bg-info/10 text-info border-info/20";
-    if (status === "closed")  return "bg-muted text-muted-foreground";
-    if (status === "expired") return "bg-destructive/10 text-destructive border-destructive/20";
+    if (status === "closed" || status === "expired")
+      return "bg-destructive/10 text-destructive border-destructive/20";
     return "bg-secondary text-muted-foreground";
   };
+
+  const statCards = [
+    { title: "Total Jobs", value: stats.total,  icon: Building2,   color: "text-primary" },
+    { title: "Active",     value: stats.active, icon: CheckCircle, color: "text-success" },
+    { title: "Drafts",     value: stats.draft,  icon: Clock,       color: "text-warning" },
+    { title: "Closed",     value: stats.closed, icon: XCircle,     color: "text-destructive" },
+  ];
 
   return (
     <AdminLayout title="Jobs" subtitle="Moderate and manage all job postings">
@@ -176,13 +164,18 @@ const Jobs = () => {
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               <div className="border-b border-border px-4">
                 <TabsList className="h-12 bg-transparent p-0 gap-6">
-                  {["all", "active", "draft", "closed"].map((tab) => (
+                  {[
+                    { id: "all",    label: `All (${jobs.length})` },
+                    { id: "active", label: `Active (${stats.active})` },
+                    { id: "draft",  label: `Drafts (${stats.draft})` },
+                    { id: "closed", label: `Closed (${stats.closed})` },
+                  ].map((tab) => (
                     <TabsTrigger
-                      key={tab}
-                      value={tab}
-                      className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-3 capitalize"
+                      key={tab.id}
+                      value={tab.id}
+                      className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-3"
                     >
-                      {tab === "all" ? `All (${jobs.length})` : `${tab.charAt(0).toUpperCase() + tab.slice(1)} (${jobs.filter(j => j.status === tab).length})`}
+                      {tab.label}
                     </TabsTrigger>
                   ))}
                 </TabsList>
@@ -204,7 +197,7 @@ const Jobs = () => {
                         key={job.id}
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: index * 0.04 }}
+                        transition={{ delay: index * 0.03 }}
                         className="p-4 hover:bg-muted/20 transition-colors"
                       >
                         <div className="flex items-start justify-between gap-4">
@@ -224,11 +217,13 @@ const Jobs = () => {
                               </span>
                               <span className="flex items-center gap-1">
                                 <Calendar className="h-3.5 w-3.5" />
-                                {new Date(job.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                                {new Date(job.created_at).toLocaleDateString("en-IN", {
+                                  day: "numeric", month: "short", year: "numeric",
+                                })}
                               </span>
                             </div>
                             <div className="flex items-center gap-3 mt-2">
-                              <Badge variant="secondary" className="text-xs">{job.type}</Badge>
+                              {job.type && <Badge variant="secondary" className="text-xs">{job.type}</Badge>}
                               <span className="text-xs text-muted-foreground">
                                 {formatSalary(job.salary_min, job.salary_max, job.salary)}
                               </span>
@@ -249,7 +244,7 @@ const Jobs = () => {
                               >
                                 <XCircle className="h-4 w-4 mr-1" /> Close
                               </Button>
-                            ) : job.status !== "active" ? (
+                            ) : (
                               <Button
                                 size="sm"
                                 className="bg-success hover:bg-success/90 text-success-foreground"
@@ -258,7 +253,7 @@ const Jobs = () => {
                               >
                                 <CheckCircle className="h-4 w-4 mr-1" /> Activate
                               </Button>
-                            ) : null}
+                            )}
 
                             {updatingId === job.id ? (
                               <Loader2 className="w-4 h-4 animate-spin" />
