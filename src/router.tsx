@@ -21,6 +21,7 @@ import InterviewPrep from "@/pages/jobseeker/InterviewPrep";
 import ResumeAnalysis from "@/pages/jobseeker/ResumeAnalysis";
 import CareerRoadmap from "@/pages/jobseeker/CareerRoadmap";
 import LearningPath from "@/pages/jobseeker/LearningPath";
+import { JobseekerNavbar as JobseekerNavbar } from "@/components/layout/jobseekerNavbar";
 
 // Employer
 import EmployerDashboard from "@/pages/employer/dashboard";
@@ -50,15 +51,27 @@ const PRIVATE_PREFIXES = [
 
 const PublicLayout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
-  const isPrivate = PRIVATE_PREFIXES.some((prefix) =>
-    location.pathname.startsWith(prefix)
-  );
+  const isAdmin    = location.pathname.startsWith("/admin");
+  const isEmployer = location.pathname.startsWith("/employer");
+  const isAuth     = location.pathname.startsWith("/auth");
+  const isJobseeker = location.pathname.startsWith("/jobseeker");
 
-  if (isPrivate) {
-    // No Navbar or Footer — these pages have their own layout
+  // Admin and Employer have their own layout components
+  if (isAdmin || isEmployer || isAuth) {
     return <>{children}</>;
   }
 
+  // Jobseeker pages get the jobseeker navbar
+  if (isJobseeker) {
+    return (
+      <>
+        <JobseekerNavbar />
+        {children}
+      </>
+    );
+  }
+
+  // Public pages get the main Navbar + Footer
   return (
     <>
       <Navbar />
