@@ -1,16 +1,8 @@
 import { motion } from "framer-motion";
 import {
-  Briefcase,
-  Target,
-  TrendingUp,
-  Sparkles,
-  BookOpen,
-  Award,
-  ChevronRight,
-  Zap,
-  Clock,
-  MapPin,
-  Map,
+  Briefcase, Target, TrendingUp, Sparkles,
+  BookOpen, Award, ChevronRight, Zap,
+  Clock, MapPin, Map,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -21,7 +13,17 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { formatSalary } from "@/lib/salaryUtils";
 
-// ── AI Career Coach cards ─────────────────────────────────────
+// ── Shared skill match calculation (same as JobSearch) ────────
+function calcMatch(jobSkills: string[], userSkills: string[]): number {
+  if (!jobSkills || jobSkills.length === 0) return 70;
+  if (!userSkills || userSkills.length === 0) return 30;
+  const userLower = userSkills.map(s => s.toLowerCase().trim());
+  const matched   = jobSkills.filter(s =>
+    userLower.some(us => us.includes(s.toLowerCase().trim()) || s.toLowerCase().trim().includes(us))
+  );
+  return Math.min(99, Math.max(20, Math.round((matched.length / jobSkills.length) * 100)));
+}
+
 const careerInsights = [
   {
     title: "Analyse your resume with AI",
@@ -47,23 +49,23 @@ const careerInsights = [
 ];
 
 const containerVariants = {
-  hidden: { opacity: 0 },
+  hidden:  { opacity: 0 },
   visible: { opacity: 1, transition: { staggerChildren: 0.1 } },
 };
-
 const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
+  hidden:  { opacity: 0, y: 20 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
 };
 
 const Dashboard = () => {
   const navigate = useNavigate();
 
-  const [userName, setUserName]                 = useState("there");
+  const [userName, setUserName]               = useState("there");
   const [applicationCount, setApplicationCount] = useState(0);
   const [profileCompletion, setProfileCompletion] = useState(0);
-  const [recommendedJobs, setRecommendedJobs]   = useState<any[]>([]);
-  const [loading, setLoading]                   = useState(true);
+  const [recommendedJobs, setRecommendedJobs] = useState<any[]>([]);
+  const [loading, setLoading]                 = useState(true);
+  const [userSkills, setUserSkills]           = useState<string[]>([]);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -77,47 +79,57 @@ const Dashboard = () => {
         .eq("jobseeker_id", user.id);
       setApplicationCount(count || 0);
 
-      // 2. Profile → name + completion %
+      // 2. Profile → name, skills, completion %
       const { data: profile } = await supabase
         .from("profiles")
         .select("full_name, skills, resume_url, bio, phone, avatar_url")
         .eq("id", user.id)
         .single();
 
+      let skills: string[] = [];
       if (profile) {
         setUserName(profile.full_name?.split(" ")[0] || "there");
+        skills = Array.isArray(profile.skills) ? profile.skills : [];
+        setUserSkills(skills);
+
         const fields = [
           profile.full_name,
           profile.bio,
           profile.phone,
           profile.avatar_url,
           profile.resume_url,
-          profile.skills?.length > 0,
+          skills.length > 0,
         ];
         const filled = fields.filter(Boolean).length;
         setProfileCompletion(Math.round((filled / fields.length) * 100));
       }
 
-      // 3. Latest 3 active jobs
+      // 3. Latest 3 active jobs with real match %
       const { data: jobs } = await supabase
         .from("jobs")
-        .select("id, title, company, location, salary, salary_min, salary_max, type, created_at")
+        .select("id, title, company, location, salary, salary_min, salary_max, type, created_at, skills")
         .eq("status", "active")
         .order("created_at", { ascending: false })
-        .limit(3);
+        .limit(6); // fetch 6, sort by match, show top 3
 
       if (jobs) {
-        setRecommendedJobs(
-          jobs.map((job: any) => ({
+        const withMatch = jobs
+          .map((job: any) => ({
             ...job,
-            salary: formatSalary(job.salary_min, job.salary_max, job.salary),
-            match: Math.floor(Math.random() * 15) + 80,
+            salaryDisplay: formatSalary(job.salary_min, job.salary_max, job.salary),
+            // ✅ Real match calculation — same logic as JobSearch
+            match: calcMatch(
+              Array.isArray(job.skills) ? job.skills : [],
+              skills
+            ),
             posted: new Date(job.created_at).toLocaleDateString("en-IN", {
-              day: "numeric",
-              month: "short",
+              day: "numeric", month: "short",
             }),
           }))
-        );
+          .sort((a, b) => b.match - a.match) // highest match first
+          .slice(0, 3);
+
+        setRecommendedJobs(withMatch);
       }
 
       setLoading(false);
@@ -160,6 +172,11 @@ const Dashboard = () => {
       onClick: () => navigate("/jobseeker/profile"),
     },
   ];
+
+  const matchColor = (pct: number) =>
+    pct >= 75 ? "bg-success/10 text-success" :
+    pct >= 50 ? "bg-warning/10 text-warning" :
+    "bg-secondary text-muted-foreground";
 
   return (
     <div className="min-h-screen bg-background">
@@ -225,7 +242,14 @@ const Dashboard = () => {
           >
             <Card className="p-6 border-0 shadow-lg">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-semibold text-foreground">Recommended for You</h2>
+                <div>
+                  <h2 className="text-xl font-semibold text-foreground">Recommended for You</h2>
+                  {userSkills.length > 0 && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Based on your {userSkills.length} skills · sorted by match
+                    </p>
+                  )}
+                </div>
                 <Button onClick={() => navigate("/jobseeker/jobs")} variant="ghost" size="sm" className="text-primary">
                   View All <ChevronRight className="w-4 h-4 ml-1" />
                 </Button>
@@ -233,7 +257,7 @@ const Dashboard = () => {
 
               {loading ? (
                 <div className="space-y-4">
-                  {[1, 2, 3].map((i) => (
+                  {[1, 2, 3].map(i => (
                     <div key={i} className="p-4 rounded-xl bg-secondary/50 animate-pulse">
                       <div className="h-4 bg-secondary rounded w-1/3 mb-2" />
                       <div className="h-3 bg-secondary rounded w-1/4" />
@@ -259,26 +283,27 @@ const Dashboard = () => {
                       className="p-4 rounded-xl bg-secondary/50 hover:bg-secondary transition-colors cursor-pointer group"
                     >
                       <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors truncate">
                               {job.title}
                             </h3>
-                            <Badge variant="secondary" className="text-xs">{job.type}</Badge>
+                            {job.type && <Badge variant="secondary" className="text-xs shrink-0">{job.type}</Badge>}
                           </div>
                           <p className="text-sm text-muted-foreground mb-2">{job.company}</p>
-                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                             <span className="flex items-center gap-1">
                               <MapPin className="w-3 h-3" /> {job.location}
                             </span>
                             <span className="flex items-center gap-1">
                               <Clock className="w-3 h-3" /> {job.posted}
                             </span>
-                            <span className="font-medium text-foreground">{job.salary}</span>
+                            <span className="font-medium text-foreground">{job.salaryDisplay}</span>
                           </div>
                         </div>
-                        <div className="text-right shrink-0">
-                          <div className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-success/10 text-success text-sm font-medium">
+                        <div className="shrink-0 ml-3">
+                          {/* ✅ Real match % with colour coding */}
+                          <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${matchColor(job.match)}`}>
                             <Zap className="w-3 h-3" />
                             {job.match}% Match
                           </div>
@@ -340,7 +365,7 @@ const Dashboard = () => {
               <div className="flex-1">
                 <h3 className="text-lg font-semibold text-foreground mb-2">Complete Your Profile</h3>
                 <p className="text-sm text-muted-foreground mb-3">
-                  A complete profile gets 3x more interview calls from recruiters!
+                  A complete profile gets 3× more interview calls from recruiters!
                 </p>
                 <div className="flex items-center gap-4">
                   <Progress value={profileCompletion} className="flex-1 h-2" />
@@ -348,7 +373,7 @@ const Dashboard = () => {
                 </div>
               </div>
               <Button
-                className="bg-gradient-primary hover:opacity-90 text-primary-foreground shadow-glow"
+                className="bg-gradient-primary hover:opacity-90 text-primary-foreground"
                 onClick={() => navigate("/jobseeker/profile")}
               >
                 Complete Now

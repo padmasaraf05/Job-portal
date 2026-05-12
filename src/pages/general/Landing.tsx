@@ -1,33 +1,24 @@
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Navbar } from "@/components/layout/Navbar";
-import { Footer } from "@/components/layout/Footer";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 import {
-  Briefcase,
-  Brain,
-  Users,
-  TrendingUp,
-  FileText,
-  Target,
-  CheckCircle2,
-  ArrowRight,
-  Sparkles,
-  Building2,
-  GraduationCap,
-  Star,
+  Briefcase, Brain, Users, TrendingUp, FileText,
+  Target, ArrowRight, Sparkles, Building2,
+  GraduationCap, Star,
 } from "lucide-react";
 
 const features = [
   {
     icon: Brain,
     title: "AI Career Coach",
-    description: "Get personalized career guidance powered by advanced AI that understands your unique skills and goals.",
+    description: "Get personalised career guidance powered by advanced AI that understands your unique skills and goals.",
   },
   {
     icon: FileText,
-    title: "Smart Resume Builder",
-    description: "Create ATS-optimized resumes with AI suggestions tailored for your target roles.",
+    title: "Smart Resume Analysis",
+    description: "Get ATS-optimised resume feedback with AI suggestions tailored for your target roles.",
   },
   {
     icon: Target,
@@ -47,15 +38,8 @@ const features = [
   {
     icon: Sparkles,
     title: "Interview Prep",
-    description: "Practice with AI-powered mock interviews and receive instant feedback.",
+    description: "Practice with AI-powered mock interviews with voice interaction and instant feedback.",
   },
-];
-
-const stats = [
-  { value: "50K+", label: "Jobs Posted" },
-  { value: "25K+", label: "Freshers Hired" },
-  { value: "2K+", label: "Companies" },
-  { value: "95%", label: "Success Rate" },
 ];
 
 const testimonials = [
@@ -74,20 +58,69 @@ const testimonials = [
   {
     name: "Sarah Johnson",
     role: "Marketing Associate at BrandHub",
-    content: "As someone new to the job market, the personalized guidance made all the difference. Great platform!",
+    content: "As someone new to the job market, the personalised guidance made all the difference. Great platform!",
     rating: 5,
   },
 ];
 
 const Landing = () => {
+  const [stats, setStats] = useState([
+    { value: "—", label: "Jobs Posted" },
+    { value: "—", label: "Job Seekers" },
+    { value: "—", label: "Companies" },
+    { value: "—", label: "Applications" },
+  ]);
+
+  const [successStories, setSuccessStories] = useState<{name: string; role: string; company: string; initial: string}[]>([]);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      const [jobsRes, usersRes, employersRes, appsRes] = await Promise.all([
+        supabase.from("jobs").select("*", { count: "exact", head: true }).eq("status", "active"),
+        supabase.from("profiles").select("*", { count: "exact", head: true }).eq("role", "jobseeker"),
+        supabase.from("profiles").select("*", { count: "exact", head: true }).eq("role", "employer"),
+        supabase.from("applications").select("*", { count: "exact", head: true }),
+      ]);
+
+      setStats([
+        { value: jobsRes.count ? `${jobsRes.count}+` : "0", label: "Jobs Posted" },
+        { value: usersRes.count ? `${usersRes.count}+` : "0", label: "Job Seekers" },
+        { value: employersRes.count ? `${employersRes.count}+` : "0", label: "Companies" },
+        { value: appsRes.count ? `${appsRes.count}+` : "0", label: "Applications" },
+      ]);
+    };
+
+    const fetchSuccessStories = async () => {
+      // Fetch shortlisted/accepted applications with job+profile info
+      const { data } = await supabase
+        .from("applications")
+        .select(`
+          status,
+          jobs ( title, company ),
+          profiles!applications_jobseeker_id_fkey ( full_name )
+        `)
+        .in("status", ["shortlisted", "accepted", "interview"])
+        .limit(3);
+
+      if (data && data.length > 0) {
+        setSuccessStories(data.map((app: any) => ({
+          name: app.profiles?.full_name || "Anonymous",
+          role: app.jobs?.title || "Job Seeker",
+          company: app.jobs?.company || "Top Company",
+          initial: (app.profiles?.full_name || "A").charAt(0).toUpperCase(),
+        })));
+      }
+    };
+
+    fetchStats();
+    fetchSuccessStories();
+  }, []);
+
   return (
     <div className="min-h-screen bg-background">
-      <Navbar />
-
       {/* Hero Section */}
-      <section className="relative pt-32 pb-20 lg:pt-40 lg:pb-32 overflow-hidden">
-        {/* Background Elements */}
-        <div className="absolute inset-0 overflow-hidden">
+      <section className="relative pt-12 pb-16 lg:pt-16 lg:pb-24 overflow-hidden">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
           <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-secondary/10 rounded-full blur-3xl" />
         </div>
@@ -111,7 +144,7 @@ const Landing = () => {
               className="font-display text-4xl md:text-5xl lg:text-6xl font-bold text-foreground mb-6 leading-tight"
             >
               Launch Your Career with{" "}
-              <span className="text-gradient">AI-Powered Guidance</span>
+              <span className="text-primary">AI-Powered Guidance</span>
             </motion.h1>
 
             <motion.p
@@ -120,7 +153,8 @@ const Landing = () => {
               transition={{ duration: 0.5, delay: 0.2 }}
               className="text-lg md:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto"
             >
-              Connect with top employers, get personalized career coaching, and access tools designed specifically for fresh graduates entering the job market.
+              Connect with top employers, get personalised career coaching, and access tools designed
+              specifically for fresh graduates entering the job market.
             </motion.p>
 
             <motion.div
@@ -129,18 +163,17 @@ const Landing = () => {
               transition={{ duration: 0.5, delay: 0.3 }}
               className="flex flex-col sm:flex-row gap-4 justify-center"
             >
-              <Button variant="hero" size="xl" asChild>
-                <Link to="/register">
-                  Start Your Journey
-                  <ArrowRight className="w-5 h-5 ml-2" />
+              <Button size="lg" asChild className="bg-gradient-primary text-primary-foreground h-12 px-8">
+                <Link to="/auth/register">
+                  Start Your Journey <ArrowRight className="w-5 h-5 ml-2" />
                 </Link>
               </Button>
-              <Button variant="outline" size="xl" asChild>
-                <Link to="/about">Learn More</Link>
+              <Button variant="outline" size="lg" asChild className="h-12 px-8">
+                <Link to="/jobseeker/jobs">Browse Jobs</Link>
               </Button>
             </motion.div>
 
-            {/* Stats */}
+            {/* Real Stats */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -161,7 +194,7 @@ const Landing = () => {
       </section>
 
       {/* For Whom Section */}
-      <section className="py-20 bg-muted/50">
+      <section className="py-0 bg-muted/50">
         <div className="container mx-auto px-4 lg:px-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -182,19 +215,17 @@ const Landing = () => {
               initial={{ opacity: 0, x: -20 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
-              className="feature-card text-center"
+              className="p-8 rounded-2xl bg-card border border-border shadow-lg text-center"
             >
               <div className="w-16 h-16 rounded-2xl bg-gradient-primary flex items-center justify-center mx-auto mb-6">
                 <GraduationCap className="w-8 h-8 text-primary-foreground" />
               </div>
-              <h3 className="font-display text-xl font-semibold text-foreground mb-3">
-                For Freshers & Job Seekers
-              </h3>
-              <p className="text-muted-foreground mb-4">
-                Get AI-powered career guidance, build stunning resumes, prepare for interviews, and connect with top employers.
+              <h3 className="text-xl font-semibold text-foreground mb-3">For Freshers & Job Seekers</h3>
+              <p className="text-muted-foreground mb-6">
+                Get AI-powered career guidance, analyse your resume, practice interviews, and connect with top employers.
               </p>
-              <Button variant="default" asChild>
-                <Link to="/register">Find Jobs</Link>
+              <Button asChild className="bg-gradient-primary text-primary-foreground">
+                <Link to="/auth/register">Find Jobs</Link>
               </Button>
             </motion.div>
 
@@ -202,27 +233,25 @@ const Landing = () => {
               initial={{ opacity: 0, x: 20 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
-              className="feature-card text-center"
+              className="p-8 rounded-2xl bg-card border border-border shadow-lg text-center"
             >
-              <div className="w-16 h-16 rounded-2xl bg-gradient-secondary flex items-center justify-center mx-auto mb-6">
-                <Building2 className="w-8 h-8 text-secondary-foreground" />
+              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-6">
+                <Building2 className="w-8 h-8 text-primary" />
               </div>
-              <h3 className="font-display text-xl font-semibold text-foreground mb-3">
-                For Employers
-              </h3>
-              <p className="text-muted-foreground mb-4">
+              <h3 className="text-xl font-semibold text-foreground mb-3">For Employers</h3>
+              <p className="text-muted-foreground mb-6">
                 Access a pool of talented freshers, post jobs easily, and find candidates that match your requirements.
               </p>
-              <Button variant="secondary" asChild>
-                <Link to="/register">Post Jobs</Link>
+              <Button variant="outline" asChild>
+                <Link to="/auth/register">Post Jobs</Link>
               </Button>
             </motion.div>
           </div>
         </div>
       </section>
 
-      {/* Features Section */}
-      <section className="py-20">
+      {/* Features */}
+      <section className="py-12">
         <div className="container mx-auto px-4 lg:px-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -246,25 +275,21 @@ const Landing = () => {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.1 }}
-                className="feature-card"
+                className="p-6 rounded-2xl bg-card border border-border shadow-sm hover:shadow-md transition-shadow"
               >
                 <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
                   <feature.icon className="w-6 h-6 text-primary" />
                 </div>
-                <h3 className="font-display text-lg font-semibold text-foreground mb-2">
-                  {feature.title}
-                </h3>
-                <p className="text-muted-foreground text-sm">
-                  {feature.description}
-                </p>
+                <h3 className="text-lg font-semibold text-foreground mb-2">{feature.title}</h3>
+                <p className="text-muted-foreground text-sm">{feature.description}</p>
               </motion.div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Testimonials Section */}
-      <section className="py-20 bg-gradient-to-b from-muted/30 to-background">
+      {/* Testimonials */}
+      <section className="py-2 bg-muted/30">
         <div className="container mx-auto px-4 lg:px-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -273,7 +298,7 @@ const Landing = () => {
             className="text-center mb-16"
           >
             <h2 className="font-display text-3xl md:text-4xl font-bold text-foreground mb-4">
-              Success Stories from Our Users
+              Success Stories
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
               Join thousands of freshers who've launched successful careers with our platform.
@@ -281,24 +306,51 @@ const Landing = () => {
           </motion.div>
 
           <div className="grid md:grid-cols-3 gap-8">
-            {testimonials.map((testimonial, index) => (
+            {successStories.length > 0 ? successStories.map((story, index) => (
               <motion.div
                 key={index}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.1 }}
-                className="glass-card p-6"
+                className="p-6 rounded-2xl bg-card border border-border shadow-sm"
               >
                 <div className="flex gap-1 mb-4">
-                  {Array.from({ length: testimonial.rating }).map((_, i) => (
-                    <Star key={i} className="w-5 h-5 fill-accent text-accent" />
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star key={i} className="w-5 h-5 fill-yellow-400 text-yellow-400" />
                   ))}
                 </div>
-                <p className="text-foreground mb-6 italic">"{testimonial.content}"</p>
+                <p className="text-foreground mb-6 italic">
+                  "I got shortlisted for <strong>{story.role}</strong> at <strong>{story.company}</strong> through CareerLaunch Pro!"
+                </p>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+                    {story.initial}
+                  </div>
+                  <div>
+                    <div className="font-semibold text-foreground">{story.name}</div>
+                    <div className="text-sm text-muted-foreground">{story.role} candidate</div>
+                  </div>
+                </div>
+              </motion.div>
+            )) : testimonials.map((t, index) => (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: index * 0.1 }}
+                className="p-6 rounded-2xl bg-card border border-border shadow-sm"
+              >
+                <div className="flex gap-1 mb-4">
+                  {Array.from({ length: t.rating }).map((_, i) => (
+                    <Star key={i} className="w-5 h-5 fill-yellow-400 text-yellow-400" />
+                  ))}
+                </div>
+                <p className="text-foreground mb-6 italic">"{t.content}"</p>
                 <div>
-                  <div className="font-semibold text-foreground">{testimonial.name}</div>
-                  <div className="text-sm text-muted-foreground">{testimonial.role}</div>
+                  <div className="font-semibold text-foreground">{t.name}</div>
+                  <div className="text-sm text-muted-foreground">{t.role}</div>
                 </div>
               </motion.div>
             ))}
@@ -306,7 +358,7 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* CTA Section */}
+      {/* CTA */}
       <section className="py-20">
         <div className="container mx-auto px-4 lg:px-8">
           <motion.div
@@ -317,20 +369,19 @@ const Landing = () => {
           >
             <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[length:20px_20px]" />
             <div className="relative z-10">
-              <h2 className="font-display text-3xl md:text-4xl lg:text-5xl font-bold text-primary-foreground mb-6">
+              <h2 className="font-display text-3xl md:text-5xl font-bold text-primary-foreground mb-6">
                 Ready to Launch Your Career?
               </h2>
               <p className="text-primary-foreground/80 text-lg mb-8 max-w-2xl mx-auto">
                 Join thousands of freshers who've already taken the first step towards their dream career.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Button variant="accent" size="xl" asChild>
-                  <Link to="/register">
-                    Get Started Free
-                    <ArrowRight className="w-5 h-5 ml-2" />
+                <Button size="lg" asChild className="bg-white text-primary hover:bg-white/90 h-12 px-8">
+                  <Link to="/auth/register">
+                    Get Started Free <ArrowRight className="w-5 h-5 ml-2" />
                   </Link>
                 </Button>
-                <Button variant="hero-outline" size="xl" asChild>
+                <Button variant="outline" size="lg" asChild className="border-white text-white hover:bg-white/10 h-12 px-8">
                   <Link to="/contact">Talk to Us</Link>
                 </Button>
               </div>
@@ -338,8 +389,6 @@ const Landing = () => {
           </motion.div>
         </div>
       </section>
-
-      <Footer />
     </div>
   );
 };

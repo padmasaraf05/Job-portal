@@ -29,6 +29,7 @@ const ApplyJob = () => {
   // Real data from DB
   const [job, setJob]         = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
+  const [resumeViewUrl, setResumeViewUrl] = useState<string | null>(null);
   const [userId, setUserId]   = useState<string | null>(null);
 
   // Loading / error states
@@ -82,6 +83,21 @@ const ApplyJob = () => {
         .single();
 
       setProfile(profileData || {});
+
+      // Generate fresh signed URL so user can verify their resume before submitting
+      if (profileData?.resume_url) {
+        const path = profileData.resume_url.startsWith("http")
+          ? profileData.resume_url.match(/\/storage\/v1\/object\/(?:sign\/|public\/)?([^?]+)/)?.[1]
+          : profileData.resume_url;
+        if (path && !path.startsWith("http")) {
+          const { data: signed } = await supabase.storage
+            .from("resumes")
+            .createSignedUrl(path, 3600);
+          if (signed?.signedUrl) setResumeViewUrl(signed.signedUrl);
+        } else {
+          setResumeViewUrl(profileData.resume_url);
+        }
+      }
 
       // Check if already applied
       const { data: existing } = await supabase
@@ -255,7 +271,19 @@ const ApplyJob = () => {
                       This resume will be sent to the employer
                     </p>
                   </div>
-                  <CheckCircle className="w-5 h-5 text-primary" />
+                  <div className="flex items-center gap-2">
+                    {resumeViewUrl && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.open(resumeViewUrl, "_blank")}
+                        title="Open resume in new tab to verify"
+                      >
+                        <FileText className="w-4 h-4 mr-1" /> View
+                      </Button>
+                    )}
+                    <CheckCircle className="w-5 h-5 text-primary shrink-0" />
+                  </div>
                 </div>
               ) : (
                 <div className="p-4 rounded-xl bg-warning/10 border border-warning/20 mb-6">

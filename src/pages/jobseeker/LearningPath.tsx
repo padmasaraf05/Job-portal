@@ -1,110 +1,210 @@
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { 
-  BookOpen, 
-  Play, 
-  Clock, 
-  Star,
-  CheckCircle,
-  Lock,
-  Trophy,
-  Target,
-  Zap,
-  ChevronRight,
-  Filter
+import {
+  BookOpen, Clock, Target, Zap,
+  Loader2, ExternalLink, RefreshCw, Map,
+  CheckCircle, ArrowRight,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-
-const learningPaths = [
-  {
-    id: 1,
-    title: "React Mastery",
-    description: "Master React from basics to advanced patterns",
-    totalModules: 12,
-    completedModules: 8,
-    duration: "24 hours",
-    level: "Intermediate",
-    enrolled: true,
-    modules: [
-      { name: "React Fundamentals", duration: "2h", completed: true },
-      { name: "State Management", duration: "3h", completed: true },
-      { name: "Hooks Deep Dive", duration: "2.5h", completed: true },
-      { name: "Context API", duration: "2h", completed: true },
-      { name: "Performance Optimization", duration: "2h", completed: true },
-      { name: "Testing React Apps", duration: "3h", completed: true },
-      { name: "React Patterns", duration: "2.5h", completed: true },
-      { name: "Redux Toolkit", duration: "3h", completed: true },
-      { name: "React Router", duration: "1.5h", completed: false, current: true },
-      { name: "Server Components", duration: "2h", completed: false },
-      { name: "Animation Libraries", duration: "1.5h", completed: false },
-      { name: "Final Project", duration: "3h", completed: false },
-    ]
-  },
-  {
-    id: 2,
-    title: "TypeScript Essentials",
-    description: "Type-safe JavaScript development",
-    totalModules: 8,
-    completedModules: 3,
-    duration: "16 hours",
-    level: "Beginner",
-    enrolled: true,
-    modules: [
-      { name: "TypeScript Basics", duration: "2h", completed: true },
-      { name: "Types & Interfaces", duration: "2.5h", completed: true },
-      { name: "Generics", duration: "2h", completed: true },
-      { name: "Advanced Types", duration: "2h", completed: false, current: true },
-      { name: "TypeScript with React", duration: "3h", completed: false },
-      { name: "Utility Types", duration: "1.5h", completed: false },
-      { name: "Best Practices", duration: "1.5h", completed: false },
-      { name: "Practical Project", duration: "2h", completed: false },
-    ]
-  },
-];
-
-const recommendedCourses = [
-  {
-    id: 3,
-    title: "Node.js Backend Development",
-    description: "Build scalable server-side applications",
-    duration: "20 hours",
-    level: "Intermediate",
-    rating: 4.8,
-    enrolled: 2340,
-    match: 92
-  },
-  {
-    id: 4,
-    title: "Data Structures & Algorithms",
-    description: "Crack coding interviews with DSA",
-    duration: "30 hours",
-    level: "Advanced",
-    rating: 4.9,
-    enrolled: 5620,
-    match: 88
-  },
-  {
-    id: 5,
-    title: "System Design Fundamentals",
-    description: "Design scalable distributed systems",
-    duration: "18 hours",
-    level: "Advanced",
-    rating: 4.7,
-    enrolled: 1890,
-    match: 85
-  },
-];
+import { supabase } from "@/lib/supabase";
+import { useToast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
+import {
+  getCachedRoadmap,
+  setCachedRoadmap,
+  clearRoadmapCache,
+} from "@/lib/roadmapCache";
 
 const LearningPath = () => {
+  const { toast }  = useToast();
+  const navigate   = useNavigate();
+
+  const [profile, setProfile]                   = useState<any>(null);
+  const [userId, setUserId]                     = useState<string | null>(null);
+  const [recommendations, setRecommendations]   = useState<any[]>([]);
+  const [skillGaps, setSkillGaps]               = useState<any[]>([]);
+  const [targetRole, setTargetRole]             = useState<string>("Software Developer");
+  const [loading, setLoading]                   = useState(true);
+  const [generating, setGenerating]             = useState(false);
+  const [stats, setStats]                       = useState({
+    coursesEnrolled: 0, hoursTotal: 0, skillsToLearn: 0, skillsStrong: 0,
+  });
+
+  // ── Load profile + read shared cache ──────────────────────
+  useEffect(() => {
+    const init = async () => {
+      setLoading(true);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoading(false); return; }
+      setUserId(user.id);
+
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("full_name, skills, experience, education, headline")
+        .eq("id", user.id)
+        .single();
+
+      if (!prof) { setLoading(false); return; }
+      setProfile(prof);
+
+      const role = prof.headline || "Software Developer";
+      setTargetRole(role);
+
+      // ✅ READ FROM SHARED CACHE — same key as CareerRoadmap writes to
+      const cached = getCachedRoadmap(user.id, prof.skills || []);
+
+      if (cached) {
+        // Use exactly the same data CareerRoadmap generated
+        applyRoadmapData(cached, prof.skills || []);
+        setLoading(false);
+        return;
+      }
+
+      // No cache yet → generate once and save to shared cache
+      await generateFromAI(user.id, prof);
+      setLoading(false);
+    };
+
+    init();
+  }, []);
+
+  // ── Apply roadmap data from cache ──────────────────────────
+  const applyRoadmapData = (roadmap: any, userSkills: string[]) => {
+    const recs  = roadmap.learning_recommendations || [];
+    const gaps  = roadmap.skills_to_develop        || [];
+
+    setRecommendations(recs);
+    setSkillGaps(gaps);
+
+    const totalHours = recs.reduce((sum: number, r: any) => {
+      const m = r.duration?.match(/(\d+)/);
+      return sum + (m ? parseInt(m[1]) : 0);
+    }, 0);
+
+    setStats({
+      coursesEnrolled: recs.length,
+      hoursTotal:      totalHours,
+      skillsToLearn:   gaps.filter((g: any) => g.current_level < 50).length,
+      skillsStrong:    userSkills.length,
+    });
+  };
+
+  // ── Generate from edge function + save to shared cache ─────
+  const generateFromAI = async (uid: string, prof: any) => {
+    setGenerating(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke("career-roadmap", {
+        body: {
+          skills:     prof.skills     || [],
+          experience: prof.experience || [],
+          education:  prof.education  || [],
+          headline:   prof.headline   || "Fresher",
+          targetRole: prof.headline   || "Software Developer",
+        },
+        headers: session?.access_token
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : {},
+      });
+
+      if (res.error) throw new Error(res.error.message);
+
+      const roadmap = res.data?.roadmap;
+      if (roadmap) {
+        // ✅ WRITE to shared cache — CareerRoadmap will read this same data
+        setCachedRoadmap(uid, prof.skills || [], roadmap);
+        applyRoadmapData(roadmap, prof.skills || []);
+      }
+    } catch (err: any) {
+      console.error("Learning path generation failed:", err);
+      toast({
+        title: "Could not generate learning path",
+        description: "Generate your Career Roadmap first, then come back here.",
+        variant: "destructive",
+      });
+    }
+    setGenerating(false);
+  };
+
+  // ── Refresh — clears cache and regenerates ─────────────────
+  const handleRefresh = async () => {
+    if (!userId || !profile) return;
+    clearRoadmapCache(userId);
+    setRecommendations([]);
+    setSkillGaps([]);
+    await generateFromAI(userId, profile);
+  };
+
+  // ── Build a course URL from resource description ───────────
+  const getCourseUrl = (item: any): string => {
+    const query = encodeURIComponent(`${item.skill} ${item.resource}`);
+    const res   = (item.resource || "").toLowerCase();
+    if (res.includes("udemy"))    return `https://www.udemy.com/courses/search/?q=${query}`;
+    if (res.includes("coursera")) return `https://www.coursera.org/search?query=${query}`;
+    if (res.includes("youtube"))  return `https://www.youtube.com/results?search_query=${query}`;
+    if (res.includes("github"))   return `https://github.com/search?q=${encodeURIComponent(item.skill)}`;
+    return `https://www.google.com/search?q=${query}`;
+  };
+
+  const importanceColor = (imp: string) => {
+    if (imp === "High")   return "text-destructive bg-destructive/10 border-destructive/20";
+    if (imp === "Medium") return "text-warning bg-warning/10 border-warning/20";
+    return "text-success bg-success/10 border-success/20";
+  };
+
+  const levelLabel = (level: number) => {
+    if (level < 30) return "Beginner";
+    if (level < 60) return "Intermediate";
+    return "Advanced";
+  };
+
+  // ── Loading ────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-foreground font-medium">
+            {generating ? "Generating your personalised learning path…" : "Loading your profile…"}
+          </p>
+          <p className="text-muted-foreground text-sm mt-1">
+            This uses the same data as your Career Roadmap
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── No profile skills ──────────────────────────────────────
+  if (!profile || (!profile.skills?.length && !profile.experience?.length)) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="p-8 border-0 shadow-lg text-center max-w-md">
+          <BookOpen className="w-12 h-12 text-primary mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-foreground mb-2">Complete Your Profile First</h2>
+          <p className="text-muted-foreground mb-6">
+            Add your skills and experience to your profile so we can generate a personalised learning path.
+          </p>
+          <Button
+            className="bg-gradient-primary text-primary-foreground"
+            onClick={() => navigate("/jobseeker/profile")}
+          >
+            Go to Profile
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background py-8">
       <div className="container mx-auto px-6">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+
           {/* Header */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
             <div>
@@ -113,15 +213,32 @@ const LearningPath = () => {
                 Learning Paths
               </h1>
               <p className="text-muted-foreground mt-1">
-                Personalized courses to boost your career
+                Personalised for{" "}
+                <span className="text-primary font-medium">{profile?.full_name || "you"}</span>
+                {" "}· same data as your{" "}
+                <button
+                  onClick={() => navigate("/jobseeker/career-roadmap")}
+                  className="text-primary underline font-medium"
+                >
+                  Career Roadmap
+                </button>
               </p>
             </div>
             <div className="flex gap-3">
-              <Button variant="outline">
-                <Filter className="w-4 h-4 mr-2" /> Filter
+              <Button
+                variant="outline"
+                onClick={handleRefresh}
+                disabled={generating}
+              >
+                {generating
+                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Refreshing…</>
+                  : <><RefreshCw className="w-4 h-4 mr-2" /> Refresh</>}
               </Button>
-              <Button className="bg-gradient-primary text-primary-foreground">
-                Explore All Courses
+              <Button
+                className="bg-gradient-primary text-primary-foreground"
+                onClick={() => navigate("/jobseeker/career-roadmap")}
+              >
+                <Map className="w-4 h-4 mr-2" /> View Career Roadmap
               </Button>
             </div>
           </div>
@@ -129,17 +246,12 @@ const LearningPath = () => {
           {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             {[
-              { label: "Courses Enrolled", value: "2", icon: BookOpen, color: "text-primary" },
-              { label: "Hours Learned", value: "18", icon: Clock, color: "text-info" },
-              { label: "Certificates", value: "1", icon: Trophy, color: "text-success" },
-              { label: "Skills Gained", value: "8", icon: Zap, color: "text-accent" },
+              { label: "Courses Recommended", value: stats.coursesEnrolled, icon: BookOpen, color: "text-primary" },
+              { label: "Hours of Learning",   value: stats.hoursTotal,      icon: Clock,    color: "text-info" },
+              { label: "Skills to Improve",   value: stats.skillsToLearn,   icon: Target,   color: "text-warning" },
+              { label: "Skills You Have",     value: stats.skillsStrong,    icon: Zap,      color: "text-success" },
             ].map((stat, index) => (
-              <motion.div
-                key={stat.label}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-              >
+              <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.1 }}>
                 <Card className="p-4 border-0 shadow-lg">
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-lg bg-secondary ${stat.color}`}>
@@ -155,122 +267,140 @@ const LearningPath = () => {
             ))}
           </div>
 
-          {/* Currently Learning */}
-          <h2 className="text-xl font-semibold text-foreground mb-4">Continue Learning</h2>
-          <div className="grid lg:grid-cols-2 gap-6 mb-10">
-            {learningPaths.map((path, index) => (
-              <motion.div
-                key={path.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.1 }}
+          {/* No data yet */}
+          {skillGaps.length === 0 && recommendations.length === 0 && !generating && (
+            <Card className="p-10 border-0 shadow-lg text-center mb-10">
+              <Map className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-foreground mb-2">
+                Generate your Career Roadmap first
+              </h3>
+              <p className="text-muted-foreground mb-6">
+                Your Learning Path is derived from your Career Roadmap. Generate it once and both pages stay in sync.
+              </p>
+              <Button
+                className="bg-gradient-primary text-primary-foreground"
+                onClick={() => navigate("/jobseeker/career-roadmap")}
               >
-                <Card className="p-6 border-0 shadow-lg">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="text-lg font-semibold text-foreground">{path.title}</h3>
-                      <p className="text-sm text-muted-foreground">{path.description}</p>
-                    </div>
-                    <Badge variant="secondary">{path.level}</Badge>
-                  </div>
-                  
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Clock className="w-4 h-4" /> {path.duration}
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Target className="w-4 h-4" /> {path.totalModules} modules
-                    </div>
-                  </div>
+                <Map className="w-4 h-4 mr-2" /> Go to Career Roadmap
+              </Button>
+            </Card>
+          )}
 
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between text-sm mb-2">
-                      <span className="text-muted-foreground">Progress</span>
-                      <span className="font-medium text-foreground">
-                        {path.completedModules}/{path.totalModules} completed
-                      </span>
-                    </div>
-                    <Progress 
-                      value={(path.completedModules / path.totalModules) * 100} 
-                      className="h-2"
-                    />
-                  </div>
+          {/* Current Skills */}
+          {profile?.skills?.length > 0 && (
+            <div className="mb-8">
+              <h2 className="text-xl font-semibold text-foreground mb-4">Your Current Skills</h2>
+              <div className="flex flex-wrap gap-2">
+                {profile.skills.map((skill: string) => (
+                  <Badge key={skill} variant="secondary" className="px-3 py-1 text-sm">
+                    <CheckCircle className="w-3 h-3 mr-1 text-success" /> {skill}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
 
-                  {/* Module List */}
-                  <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
-                    {path.modules.map((module, modIndex) => (
-                      <div 
-                        key={modIndex}
-                        className={`flex items-center gap-3 p-2 rounded-lg ${
-                          module.current ? 'bg-primary/10' : ''
-                        }`}
-                      >
-                        {module.completed ? (
-                          <CheckCircle className="w-5 h-5 text-success shrink-0" />
-                        ) : module.current ? (
-                          <Play className="w-5 h-5 text-primary shrink-0" />
-                        ) : (
-                          <Lock className="w-5 h-5 text-muted-foreground/30 shrink-0" />
-                        )}
-                        <span className={`flex-1 text-sm ${
-                          module.completed ? 'text-muted-foreground' : 
-                          module.current ? 'text-foreground font-medium' : 'text-muted-foreground'
-                        }`}>
-                          {module.name}
+          {/* Skills to Develop — same as CareerRoadmap sidebar */}
+          {skillGaps.length > 0 && (
+            <div className="mb-10">
+              <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+                Skills to Develop
+                <span className="text-xs text-muted-foreground font-normal">
+                  · same as Career Roadmap
+                </span>
+              </h2>
+              <div className="grid md:grid-cols-2 gap-4">
+                {skillGaps.map((gap: any, index: number) => (
+                  <motion.div
+                    key={gap.skill}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.08 }}
+                  >
+                    <Card className="p-5 border-0 shadow-sm">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-medium text-foreground">{gap.skill}</h3>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${importanceColor(gap.importance)}`}>
+                          {gap.importance} Priority
                         </span>
-                        <span className="text-xs text-muted-foreground">{module.duration}</span>
                       </div>
-                    ))}
-                  </div>
+                      <div className="flex items-center justify-between text-sm text-muted-foreground mb-2">
+                        <span>Current: {levelLabel(gap.current_level)}</span>
+                        <span>{gap.current_level}%</span>
+                      </div>
+                      <Progress value={gap.current_level} className="h-2" />
+                      <p className="text-xs text-muted-foreground mt-2">Target: Advanced (80%+)</p>
+                    </Card>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          )}
 
-                  <Button className="w-full mt-4 bg-gradient-primary text-primary-foreground">
-                    <Play className="w-4 h-4 mr-2" /> Continue Learning
-                  </Button>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
+          {/* Recommended Resources — same as CareerRoadmap sidebar */}
+          {recommendations.length > 0 && (
+            <div className="mb-10">
+              <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+                Recommended Learning Resources
+                <span className="text-xs text-muted-foreground font-normal">
+                  · same as Career Roadmap
+                </span>
+              </h2>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {recommendations.map((item: any, index: number) => (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 + index * 0.1 }}
+                  >
+                    <Card className="p-6 border-0 shadow-lg h-full flex flex-col">
+                      <div className="flex items-start justify-between mb-3">
+                        <Badge className="bg-primary/10 text-primary border-0 text-xs">
+                          {item.skill}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> {item.duration}
+                        </span>
+                      </div>
+                      <h3 className="font-semibold text-foreground mb-2 flex-1 text-sm leading-relaxed">
+                        {item.resource}
+                      </h3>
+                      <Button
+                        variant="outline"
+                        className="w-full mt-auto"
+                        onClick={() => window.open(getCourseUrl(item), "_blank")}
+                      >
+                        Start Learning <ExternalLink className="w-4 h-4 ml-2" />
+                      </Button>
+                    </Card>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          )}
 
-          {/* Recommended */}
-          <h2 className="text-xl font-semibold text-foreground mb-4">Recommended for You</h2>
-          <div className="grid md:grid-cols-3 gap-6">
-            {recommendedCourses.map((course, index) => (
-              <motion.div
-                key={course.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 + index * 0.1 }}
+          {/* Quick links */}
+          <div className="grid md:grid-cols-3 gap-4">
+            {[
+              { title: "Practice Interviews",  desc: "Prepare with AI mock interviews",  href: "/jobseeker/interview-prep",  icon: "🎤" },
+              { title: "Analyse Resume",        desc: "Get AI feedback on your resume",    href: "/jobseeker/resume-analysis",   icon: "📄" },
+              { title: "Career Roadmap",        desc: "See your full career plan",          href: "/jobseeker/career-roadmap",    icon: "🗺️" },
+            ].map(link => (
+              <Card
+                key={link.href}
+                className="p-5 border-0 shadow-sm cursor-pointer hover:shadow-md transition-shadow group"
+                onClick={() => navigate(link.href)}
               >
-                <Card className="p-6 border-0 shadow-lg card-hover">
-                  <div className="flex items-center justify-between mb-3">
-                    <Badge className="bg-success/10 text-success border-0">
-                      {course.match}% Match
-                    </Badge>
-                    <Badge variant="outline">{course.level}</Badge>
-                  </div>
-                  <h3 className="font-semibold text-foreground mb-2">{course.title}</h3>
-                  <p className="text-sm text-muted-foreground mb-4">{course.description}</p>
-                  
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" /> {course.duration}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Star className="w-3 h-3 text-warning fill-warning" /> {course.rating}
-                    </span>
-                  </div>
-                  
-                  <p className="text-xs text-muted-foreground mb-4">
-                    {course.enrolled.toLocaleString()} students enrolled
-                  </p>
-
-                  <Button variant="outline" className="w-full">
-                    View Course <ChevronRight className="w-4 h-4 ml-1" />
-                  </Button>
-                </Card>
-              </motion.div>
+                <div className="text-2xl mb-2">{link.icon}</div>
+                <h3 className="font-semibold text-foreground mb-1 group-hover:text-primary transition-colors">
+                  {link.title}
+                </h3>
+                <p className="text-sm text-muted-foreground">{link.desc}</p>
+              </Card>
             ))}
           </div>
+
         </motion.div>
       </div>
     </div>

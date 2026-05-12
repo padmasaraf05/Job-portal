@@ -14,6 +14,11 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
+import {
+  getCachedRoadmap,
+  setCachedRoadmap,
+  clearRoadmapCache,
+} from "@/lib/roadmapCache";
 
 interface Milestone {
   id: number;
@@ -40,20 +45,23 @@ interface Roadmap {
 }
 
 const CareerRoadmap = () => {
-  const { toast } = useToast();
-  const navigate = useNavigate();
+  const { toast }  = useToast();
+  const navigate   = useNavigate();
 
-  const [profile, setProfile]       = useState<any>(null);
-  const [targetRole, setTargetRole] = useState("Frontend Developer");
-  const [roadmap, setRoadmap]       = useState<Roadmap | null>(null);
-  const [loading, setLoading]       = useState(false);
+  const [profile, setProfile]             = useState<any>(null);
+  const [userId, setUserId]               = useState<string | null>(null);
+  const [targetRole, setTargetRole]       = useState("Frontend Developer");
+  const [roadmap, setRoadmap]             = useState<Roadmap | null>(null);
+  const [loading, setLoading]             = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
-  // ── Fetch profile ─────────────────────────────────────────
+  // ── Fetch profile + check shared cache ───────────────────
   useEffect(() => {
     const fetchProfile = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setLoadingProfile(false); return; }
+
+      setUserId(user.id);
 
       const { data } = await supabase
         .from("profiles")
@@ -61,7 +69,15 @@ const CareerRoadmap = () => {
         .eq("id", user.id)
         .single();
 
-      setProfile(data || {});
+      const prof = data || {};
+      setProfile(prof);
+
+      // ✅ Check shared cache first — same key LearningPath uses
+      const cached = getCachedRoadmap(user.id, prof.skills || []);
+      if (cached) {
+        setRoadmap(cached);
+      }
+
       setLoadingProfile(false);
     };
     fetchProfile();
@@ -86,11 +102,24 @@ const CareerRoadmap = () => {
       });
 
       if (res.error) throw new Error(res.error.message);
-      setRoadmap(res.data.roadmap);
+
+      const generated = res.data.roadmap;
+      setRoadmap(generated);
+
+      // ✅ Save to shared cache so LearningPath reads the same data
+      if (userId) {
+        setCachedRoadmap(userId, profile?.skills || [], generated);
+      }
     } catch (err: any) {
       toast({ title: "Failed to generate roadmap", description: err.message, variant: "destructive" });
     }
     setLoading(false);
+  };
+
+  // ── Regenerate — clears shared cache first ────────────────
+  const handleRegenerate = () => {
+    if (userId) clearRoadmapCache(userId);
+    setRoadmap(null);
   };
 
   if (loadingProfile) {
@@ -103,7 +132,7 @@ const CareerRoadmap = () => {
 
   const milestoneNodeStyle = (status: string) => {
     if (status === "current") return "bg-primary text-primary-foreground";
-    if (status === "next") return "bg-accent text-accent-foreground";
+    if (status === "next")    return "bg-accent text-accent-foreground";
     return "bg-muted text-muted-foreground";
   };
 
@@ -133,6 +162,7 @@ const CareerRoadmap = () => {
                 <h2 className="text-xl font-bold text-foreground">Generate Your Roadmap</h2>
                 <p className="text-muted-foreground text-sm mt-2">
                   AI analyses your skills and experience to build a personalised career plan.
+                  The same data will be used in your Learning Path.
                 </p>
               </div>
 
@@ -141,7 +171,7 @@ const CareerRoadmap = () => {
                   Analysing: {profile?.full_name || "Your Profile"}
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Skills: {profile?.skills?.slice(0, 5).join(", ") || "None added yet"}
+                  Skills: {profile?.skills?.slice(0, 5).join(", ") || "None added yet — add skills to your profile first"}
                 </p>
                 <p className="text-sm text-muted-foreground">
                   Experience: {profile?.experience?.length || 0} entries ·
@@ -149,11 +179,23 @@ const CareerRoadmap = () => {
                 </p>
               </div>
 
+              {(!profile?.skills || profile.skills.length === 0) && (
+                <div className="p-3 rounded-lg bg-warning/10 border border-warning/20 mb-4">
+                  <p className="text-sm text-warning font-medium">No skills on your profile</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Add skills to your profile for a more accurate roadmap.{" "}
+                    <button onClick={() => navigate("/jobseeker/profile")} className="text-primary underline">
+                      Go to Profile →
+                    </button>
+                  </p>
+                </div>
+              )}
+
               <div className="space-y-2 mb-6">
                 <Label>What role do you want to reach?</Label>
                 <Input
                   value={targetRole}
-                  onChange={(e) => setTargetRole(e.target.value)}
+                  onChange={e => setTargetRole(e.target.value)}
                   placeholder="e.g. Senior Frontend Developer, Data Scientist"
                 />
               </div>
@@ -197,11 +239,7 @@ const CareerRoadmap = () => {
                         <Sparkles className="w-5 h-5" />
                         <span>Career Score: {roadmap.career_score}/100</span>
                       </div>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setRoadmap(null)}
-                      >
+                      <Button variant="secondary" size="sm" onClick={handleRegenerate}>
                         <RefreshCw className="w-4 h-4 mr-1" /> Regenerate
                       </Button>
                     </div>
@@ -215,7 +253,6 @@ const CareerRoadmap = () => {
                 <div className="lg:col-span-2">
                   <div className="relative">
                     <div className="absolute left-8 top-0 bottom-0 w-0.5 bg-gradient-to-b from-primary via-primary/50 to-border" />
-
                     <div className="space-y-8">
                       {roadmap.milestones.map((milestone, index) => (
                         <motion.div
@@ -227,22 +264,20 @@ const CareerRoadmap = () => {
                         >
                           <div className={`absolute left-4 w-8 h-8 rounded-full flex items-center justify-center ${milestoneNodeStyle(milestone.status)}`}>
                             {milestone.status === "current" ? <Star className="w-4 h-4" /> :
-                             milestone.status === "next" ? <Target className="w-4 h-4" /> :
+                             milestone.status === "next"    ? <Target className="w-4 h-4" /> :
                              <Circle className="w-4 h-4" />}
                           </div>
 
                           <Card className={`p-6 border-0 shadow-lg ${
                             milestone.status === "current" ? "border-l-4 border-l-primary" :
-                            milestone.status === "next" ? "border-l-4 border-l-accent" : ""
+                            milestone.status === "next"    ? "border-l-4 border-l-accent" : ""
                           }`}>
                             <div className="flex items-start justify-between mb-3 flex-wrap gap-2">
                               <div>
                                 <h3 className="text-lg font-semibold text-foreground flex items-center gap-2 flex-wrap">
                                   {milestone.title}
                                   {milestone.status === "current" && (
-                                    <Badge className="bg-primary/10 text-primary border-0 text-xs">
-                                      Current Target
-                                    </Badge>
+                                    <Badge className="bg-primary/10 text-primary border-0 text-xs">Current Target</Badge>
                                   )}
                                 </h3>
                                 <p className="text-sm text-muted-foreground">{milestone.description}</p>
@@ -256,14 +291,14 @@ const CareerRoadmap = () => {
                               <span className="flex items-center gap-1 text-success font-medium">
                                 <IndianRupee className="w-4 h-4" /> {milestone.salary}
                               </span>
-                              <span className="text-muted-foreground text-xs">⏱ {milestone.timeline}</span>
+                              <span className="text-xs">⏱ {milestone.timeline}</span>
                             </div>
 
                             {milestone.status === "current" && milestone.progress > 0 && (
                               <div className="mb-4">
                                 <div className="flex items-center justify-between text-sm mb-1">
                                   <span className="text-muted-foreground">Progress</span>
-                                  <span className="font-medium text-foreground">{milestone.progress}%</span>
+                                  <span className="font-medium">{milestone.progress}%</span>
                                 </div>
                                 <Progress value={milestone.progress} className="h-2" />
                               </div>
@@ -272,7 +307,7 @@ const CareerRoadmap = () => {
                             <div className="mb-4">
                               <p className="text-xs font-medium text-foreground mb-2">Required Skills:</p>
                               <div className="flex flex-wrap gap-2">
-                                {milestone.skills_needed.map((skill) => (
+                                {milestone.skills_needed.map(skill => (
                                   <Badge key={skill} variant="secondary" className="text-xs">{skill}</Badge>
                                 ))}
                               </div>
@@ -295,7 +330,6 @@ const CareerRoadmap = () => {
 
                 {/* Sidebar */}
                 <div className="space-y-6">
-
                   {/* Skills to develop */}
                   <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }}>
                     <Card className="p-6 border-0 shadow-lg">
@@ -303,7 +337,7 @@ const CareerRoadmap = () => {
                         <TrendingUp className="w-5 h-5 text-primary" /> Skills to Develop
                       </h3>
                       <div className="space-y-4">
-                        {roadmap.skills_to_develop.map((item) => (
+                        {roadmap.skills_to_develop.map(item => (
                           <div key={item.skill}>
                             <div className="flex items-center justify-between text-sm mb-1">
                               <span className="text-foreground">{item.skill}</span>
@@ -334,11 +368,8 @@ const CareerRoadmap = () => {
                         <Map className="w-5 h-5 text-primary" /> Alternative Paths
                       </h3>
                       <div className="space-y-3">
-                        {roadmap.alternative_paths.map((path) => (
-                          <div
-                            key={path.title}
-                            className="p-3 rounded-lg bg-secondary/50 hover:bg-secondary cursor-pointer transition-colors"
-                          >
+                        {roadmap.alternative_paths.map(path => (
+                          <div key={path.title} className="p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors cursor-pointer">
                             <div className="flex items-center justify-between">
                               <span className="text-sm font-medium text-foreground">{path.title}</span>
                               <Badge variant="outline" className="text-xs">{path.match}% match</Badge>
@@ -349,7 +380,7 @@ const CareerRoadmap = () => {
                     </Card>
                   </motion.div>
 
-                  {/* AI insight */}
+                  {/* AI Insight */}
                   <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.5 }}>
                     <Card className="p-6 border-0 shadow-lg bg-gradient-to-br from-primary/10 to-accent/10">
                       <div className="flex items-start gap-3">
