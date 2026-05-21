@@ -41,7 +41,7 @@ const ForgotPassword = () => {
             <Briefcase className="w-5 h-5 text-primary-foreground" />
           </div>
           <span className="font-display font-bold text-xl text-foreground">
-            CareerLaunch<span className="text-primary">Pro</span>
+            CareerLaunch<span className="text-primary"></span>
           </span>
         </Link>
 
