@@ -34,7 +34,7 @@ export const Footer = () => {
                 <Briefcase className="w-5 h-5 text-primary-foreground" />
               </div>
               <span className="font-display font-bold text-xl">
-                CareerLaunch<span className="text-primary">Pro</span>
+                CareerLaunch<span className="text-primary"></span>
               </span>
             </Link>
             <p className="text-background/70 mb-6 max-w-sm">
@@ -81,7 +81,7 @@ export const Footer = () => {
             <div className="flex flex-wrap justify-center gap-6 text-sm text-background/70">
               <a href="mailto:hello@careerlaunchpro.com" className="flex items-center gap-2 hover:text-primary">
                 <Mail className="w-4 h-4" />
-                hello@careerlaunchpro.com
+                hello@careerlaunch.com
               </a>
               <a href="tel:+1234567890" className="flex items-center gap-2 hover:text-primary">
                 <Phone className="w-4 h-4" />
@@ -89,11 +89,11 @@ export const Footer = () => {
               </a>
               <span className="flex items-center gap-2">
                 <MapPin className="w-4 h-4" />
-                San Francisco, CA
+                Bangalore, India
               </span>
             </div>
             <p className="text-sm text-background/50">
-              © {new Date().getFullYear()} CareerLaunch Pro. All rights reserved.
+              © {new Date().getFullYear()} CareerLaunch. All rights reserved.
             </p>
           </div>
         </div>

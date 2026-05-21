@@ -53,7 +53,7 @@ export const JobseekerNavbar = () => {
               <Briefcase className="w-4 h-4 text-primary-foreground" />
             </div>
             <span className="font-bold text-foreground text-sm hidden sm:block">
-              CareerLaunch<span className="text-primary">Pro</span>
+              CareerLaunch<span className="text-primary"></span>
             </span>
           </Link>
 

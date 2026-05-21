@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { formatSalary } from "@/lib/salaryUtils";
 
+
 // ── Shared skill match calculation (same as JobSearch) ────────
 function calcMatch(jobSkills: string[], userSkills: string[]): number {
   if (!jobSkills || jobSkills.length === 0) return 70;
@@ -46,6 +47,13 @@ const careerInsights = [
     action: "Generate",
     path: "/jobseeker/career-roadmap",
   },
+  {
+  title: "Take skill assessments",
+  description: "Validate your skills with AI-generated quizzes",
+  icon: Target,
+  action: "Start Assessment",
+  path: "/jobseeker/skill-assessment",
+},
 ];
 
 const containerVariants = {

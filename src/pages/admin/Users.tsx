@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
-  Search, Filter, MoreHorizontal, Shield,
+  Search, MoreHorizontal, Shield,
   UserCheck, UserX, ChevronLeft, ChevronRight,
   Loader2, RefreshCw,
 } from "lucide-react";
@@ -16,12 +16,22 @@ import {
   DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectItem,
+  SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 
 const PAGE_SIZE = 20;
+
+// ── Status logic ──────────────────────────────────────────────
+// A user is "Active" if:
+//   • is_verified is explicitly TRUE (admin activated), OR
+//   • is_verified is NULL/undefined (never touched = registered normally = active)
+// A user is "Deactivated" only if admin explicitly set is_verified = false.
+function isActive(user: any): boolean {
+  return user.is_verified !== false; // null, undefined, true → Active
+}
 
 const Users = () => {
   const { toast } = useToast();
@@ -30,42 +40,41 @@ const Users = () => {
   const [loading, setLoading]         = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter]   = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage]               = useState(0);
   const [total, setTotal]             = useState(0);
   const [updatingId, setUpdatingId]   = useState<string | null>(null);
 
-  // ── Stats ─────────────────────────────────────────────────
   const [stats, setStats] = useState({
     total: 0, jobseekers: 0, employers: 0, admins: 0,
   });
 
+  // ── Fetch ─────────────────────────────────────────────────
   const fetchUsers = async () => {
     setLoading(true);
 
-    // Stats
+    // Stats — fetch all for counts
     const { data: allProfiles } = await supabase
       .from("profiles")
-      .select("role, is_verified");
+      .select("role");
 
     if (allProfiles) {
       setStats({
         total:      allProfiles.length,
-        jobseekers: allProfiles.filter((p) => p.role === "jobseeker").length,
-        employers:  allProfiles.filter((p) => p.role === "employer").length,
-        admins:     allProfiles.filter((p) => p.role === "admin").length,
+        jobseekers: allProfiles.filter(p => p.role === "jobseeker").length,
+        employers:  allProfiles.filter(p => p.role === "employer").length,
+        admins:     allProfiles.filter(p => p.role === "admin").length,
       });
     }
 
-    // Paged user list
+    // Paged query
     let query = supabase
       .from("profiles")
-      .select("id, full_name, role, phone, created_at, is_verified, resume_url", { count: "exact" })
+      .select("id, full_name, role, phone, created_at, is_verified", { count: "exact" })
       .order("created_at", { ascending: false })
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-    if (roleFilter !== "all") {
-      query = query.eq("role", roleFilter);
-    }
+    if (roleFilter !== "all") query = query.eq("role", roleFilter);
 
     const { data, error, count } = await query;
 
@@ -79,66 +88,61 @@ const Users = () => {
     setLoading(false);
   };
 
-  useEffect(() => {
-    fetchUsers();
-  }, [page, roleFilter]);
+  useEffect(() => { fetchUsers(); }, [page, roleFilter]);
 
-  // ── Ban / Activate ─────────────────────────────────────────
-  const toggleVerified = async (userId: string, currentState: boolean, userName: string) => {
+  // ── Activate / Deactivate ──────────────────────────────────
+  // We store deactivated = is_verified: false
+  // Active = is_verified: true (or null, treated as active)
+  const toggleActive = async (userId: string, currentlyActive: boolean, userName: string) => {
     setUpdatingId(userId);
+    const newValue = !currentlyActive; // true = active, false = deactivated
 
     const { error } = await supabase
       .from("profiles")
-      .update({ is_verified: !currentState })
+      .update({ is_verified: newValue })
       .eq("id", userId);
 
     if (error) {
       toast({ title: "Update failed", description: error.message, variant: "destructive" });
     } else {
-      setUsers((prev) =>
-        prev.map((u) => u.id === userId ? { ...u, is_verified: !currentState } : u)
-      );
-      toast({
-        title: currentState ? `${userName} deactivated` : `${userName} activated`,
-      });
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, is_verified: newValue } : u));
+      toast({ title: currentlyActive ? `${userName} deactivated` : `${userName} activated` });
     }
-
     setUpdatingId(null);
   };
 
   // ── Change role ────────────────────────────────────────────
   const changeRole = async (userId: string, newRole: string, userName: string) => {
     setUpdatingId(userId);
-
     const { error } = await supabase
-      .from("profiles")
-      .update({ role: newRole })
-      .eq("id", userId);
+      .from("profiles").update({ role: newRole }).eq("id", userId);
 
     if (error) {
       toast({ title: "Role update failed", variant: "destructive" });
     } else {
-      setUsers((prev) =>
-        prev.map((u) => u.id === userId ? { ...u, role: newRole } : u)
-      );
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
       toast({ title: `${userName} is now ${newRole}` });
     }
-
     setUpdatingId(null);
   };
 
-  // ── Client-side search ─────────────────────────────────────
-  const filteredUsers = users.filter((u) =>
-    !searchQuery ||
-    u.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.id?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // ── Client-side search + status filter ────────────────────
+  const filteredUsers = users.filter(u => {
+    const matchesSearch = !searchQuery ||
+      u.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.id?.toLowerCase().includes(searchQuery.toLowerCase());
+    const active = isActive(u);
+    const matchesStatus =
+      statusFilter === "all"    ? true :
+      statusFilter === "active" ? active : !active;
+    return matchesSearch && matchesStatus;
+  });
 
   const statCards = [
-    { title: "Total Users",    value: stats.total,      icon: UserCheck, color: "text-primary" },
-    { title: "Job Seekers",    value: stats.jobseekers, icon: UserCheck, color: "text-success" },
-    { title: "Employers",      value: stats.employers,  icon: Shield,    color: "text-accent" },
-    { title: "Admins",         value: stats.admins,     icon: Shield,    color: "text-warning" },
+    { title: "Total Users",  value: stats.total,      color: "text-primary" },
+    { title: "Job Seekers",  value: stats.jobseekers, color: "text-success" },
+    { title: "Employers",    value: stats.employers,  color: "text-accent"  },
+    { title: "Admins",       value: stats.admins,     color: "text-warning" },
   ];
 
   return (
@@ -149,20 +153,15 @@ const Users = () => {
           <motion.div key={stat.title} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.1 }}>
             <Card>
               <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-muted-foreground">{stat.title}</p>
-                    <p className="text-2xl font-bold text-foreground">{stat.value}</p>
-                  </div>
-                  <stat.icon className={`h-8 w-8 ${stat.color} opacity-70`} />
-                </div>
+                <p className="text-sm text-muted-foreground">{stat.title}</p>
+                <p className={`text-3xl font-bold mt-1 ${stat.color}`}>{stat.value}</p>
               </CardContent>
             </Card>
           </motion.div>
         ))}
       </div>
 
-      {/* Users Table */}
+      {/* Table */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
         <Card>
           <CardHeader className="border-b border-border">
@@ -174,11 +173,11 @@ const Users = () => {
                   <Input
                     placeholder="Search by name…"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-56 pl-9"
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="w-52 pl-9"
                   />
                 </div>
-                <Select value={roleFilter} onValueChange={(v) => { setRoleFilter(v); setPage(0); }}>
+                <Select value={roleFilter} onValueChange={v => { setRoleFilter(v); setPage(0); }}>
                   <SelectTrigger className="w-36">
                     <SelectValue placeholder="Role" />
                   </SelectTrigger>
@@ -187,6 +186,16 @@ const Users = () => {
                     <SelectItem value="jobseeker">Job Seeker</SelectItem>
                     <SelectItem value="employer">Employer</SelectItem>
                     <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="deactivated">Deactivated</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button variant="outline" size="icon" onClick={fetchUsers}>
@@ -218,101 +227,96 @@ const Users = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredUsers.map((user, index) => (
-                      <motion.tr
-                        key={user.id}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: index * 0.03 }}
-                        className="border-b border-border hover:bg-muted/20 transition-colors"
-                      >
-                        <td className="p-4">
-                          <div className="flex items-center gap-3">
-                            <Avatar className="h-9 w-9">
-                              <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                                {user.full_name?.charAt(0)?.toUpperCase() || "?"}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <p className="font-medium text-foreground">
-                                {user.full_name || "Unnamed user"}
-                              </p>
-                              <p className="text-xs text-muted-foreground font-mono">
-                                {user.id.slice(0, 8)}…
-                              </p>
+                    {filteredUsers.map((user, index) => {
+                      const active = isActive(user);
+                      return (
+                        <motion.tr
+                          key={user.id}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: index * 0.02 }}
+                          className="border-b border-border hover:bg-muted/20 transition-colors"
+                        >
+                          <td className="p-4">
+                            <div className="flex items-center gap-3">
+                              <Avatar className="h-9 w-9">
+                                <AvatarFallback className="bg-primary/10 text-primary text-sm">
+                                  {user.full_name?.charAt(0)?.toUpperCase() || "?"}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <p className="font-medium text-foreground">
+                                  {user.full_name || "Unnamed user"}
+                                </p>
+                                <p className="text-xs text-muted-foreground font-mono">
+                                  {user.id.slice(0, 8)}…
+                                </p>
+                              </div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <Badge
-                            variant="secondary"
-                            className={
-                              user.role === "admin"     ? "bg-primary/10 text-primary" :
-                              user.role === "employer"  ? "bg-accent/10 text-accent" :
+                          </td>
+                          <td className="p-4">
+                            <Badge variant="secondary" className={
+                              user.role === "admin"    ? "bg-primary/10 text-primary" :
+                              user.role === "employer" ? "bg-accent/10 text-accent"   :
                               "bg-muted text-muted-foreground"
-                            }
-                          >
-                            {user.role}
-                          </Badge>
-                        </td>
-                        <td className="p-4">
-                          <Badge
-                            className={
-                              user.is_verified
+                            }>
+                              {user.role}
+                            </Badge>
+                          </td>
+                          <td className="p-4">
+                            {/* Active = registered & not deactivated. Deactivated = admin explicitly disabled. */}
+                            <Badge className={
+                              active
                                 ? "bg-success/10 text-success border-success/20"
                                 : "bg-destructive/10 text-destructive border-destructive/20"
-                            }
-                          >
-                            {user.is_verified ? "Active" : "Inactive"}
-                          </Badge>
-                        </td>
-                        <td className="p-4 text-muted-foreground">
-                          {new Date(user.created_at).toLocaleDateString("en-IN", {
-                            day: "numeric", month: "short", year: "numeric",
-                          })}
-                        </td>
-                        <td className="p-4 text-right">
-                          {updatingId === user.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin ml-auto" />
-                          ) : (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8">
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onClick={() => toggleVerified(user.id, user.is_verified, user.full_name)}
-                                >
-                                  {user.is_verified ? (
-                                    <><UserX className="mr-2 h-4 w-4" /> Deactivate</>
-                                  ) : (
-                                    <><UserCheck className="mr-2 h-4 w-4" /> Activate</>
+                            }>
+                              {active ? "Active" : "Deactivated"}
+                            </Badge>
+                          </td>
+                          <td className="p-4 text-muted-foreground text-sm">
+                            {new Date(user.created_at).toLocaleDateString("en-IN", {
+                              day: "numeric", month: "short", year: "numeric",
+                            })}
+                          </td>
+                          <td className="p-4 text-right">
+                            {updatingId === user.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin ml-auto" />
+                            ) : (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => toggleActive(user.id, active, user.full_name)}>
+                                    {active
+                                      ? <><UserX className="mr-2 h-4 w-4 text-destructive" /> Deactivate</>
+                                      : <><UserCheck className="mr-2 h-4 w-4 text-success" /> Activate</>}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  {user.role !== "admin" && (
+                                    <DropdownMenuItem onClick={() => changeRole(user.id, "admin", user.full_name)}>
+                                      <Shield className="mr-2 h-4 w-4" /> Make Admin
+                                    </DropdownMenuItem>
                                   )}
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                {user.role !== "admin" && (
-                                  <DropdownMenuItem onClick={() => changeRole(user.id, "admin", user.full_name)}>
-                                    <Shield className="mr-2 h-4 w-4" /> Make Admin
-                                  </DropdownMenuItem>
-                                )}
-                                {user.role !== "jobseeker" && (
-                                  <DropdownMenuItem onClick={() => changeRole(user.id, "jobseeker", user.full_name)}>
-                                    <UserCheck className="mr-2 h-4 w-4" /> Set as Job Seeker
-                                  </DropdownMenuItem>
-                                )}
-                                {user.role !== "employer" && (
-                                  <DropdownMenuItem onClick={() => changeRole(user.id, "employer", user.full_name)}>
-                                    <Shield className="mr-2 h-4 w-4" /> Set as Employer
-                                  </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                        </td>
-                      </motion.tr>
-                    ))}
+                                  {user.role !== "jobseeker" && (
+                                    <DropdownMenuItem onClick={() => changeRole(user.id, "jobseeker", user.full_name)}>
+                                      <UserCheck className="mr-2 h-4 w-4" /> Set as Job Seeker
+                                    </DropdownMenuItem>
+                                  )}
+                                  {user.role !== "employer" && (
+                                    <DropdownMenuItem onClick={() => changeRole(user.id, "employer", user.full_name)}>
+                                      <Shield className="mr-2 h-4 w-4" /> Set as Employer
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            )}
+                          </td>
+                        </motion.tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -321,13 +325,13 @@ const Users = () => {
             {/* Pagination */}
             <div className="flex items-center justify-between border-t border-border px-4 py-3">
               <p className="text-sm text-muted-foreground">
-                Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total} users
+                Showing {Math.min(page * PAGE_SIZE + 1, total)}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total} users
               </p>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+                <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
                   <ChevronLeft className="h-4 w-4 mr-1" /> Previous
                 </Button>
-                <Button variant="outline" size="sm" disabled={(page + 1) * PAGE_SIZE >= total} onClick={() => setPage((p) => p + 1)}>
+                <Button variant="outline" size="sm" disabled={(page + 1) * PAGE_SIZE >= total} onClick={() => setPage(p => p + 1)}>
                   Next <ChevronRight className="h-4 w-4 ml-1" />
                 </Button>
               </div>
